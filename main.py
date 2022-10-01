@@ -1,31 +1,125 @@
 import wx
 import web_scraper
+from pubsub import pub
 
 class Main(wx.Frame):
     def __init__(self, parent):
         super().__init__(parent)
-        self.SetTitle('4waTT')
+        self.scraper_thread = None
+
+        self.SetTitle('DNC 4waTT')
+        self.SetSize(400, 400)
         self.CenterOnScreen()
 
         self.InitUI()
-        self.InitWebScraper()
     
     def InitUI(self):
-        master = wx.BoxSizer(wx.VERTICAL)        
+        master = wx.BoxSizer(wx.HORIZONTAL)
+        leftSizer = wx.BoxSizer(wx.VERTICAL)
+        rightSizer = wx.BoxSizer(wx.VERTICAL)
 
-        self.text = wx.StaticText(self, wx.ID_ANY, '', size=(200, 60))
-        master.Add(self.text, flag=wx.TOP | wx.ALIGN_CENTER, border=25)
+        master.Add(leftSizer, wx.ALL | wx.EXPAND, border=5)
+        master.Add(rightSizer, wx.ALL | wx.EXPAND, border=5)
 
+        self.status_t = wx.StaticText(self, -1, 'Software em desenvolvimento...')
+        self.page_t = wx.StaticText(self, -1, '') # Nome da página de download atual
+        self.filename_t = wx.StaticText(self, -1, '', style=wx.ALIGN_LEFT) # Nome do arquivo.
+        self.fileSize_t = wx.StaticText(self, -1, '', style=wx.ALIGN_LEFT)  # Status de download
+        self.fileSpeed_t = wx.StaticText(self, -1, '', style=wx.ALIGN_LEFT)  # Status de download
+        self.topGauge = wx.Gauge(self, -1, style=wx.GA_SMOOTH, size=(300, 30))
+        self.curGauge = wx.Gauge(self, -1, size=(300, 30))
+        self.startBtn = wx.Button(self, -1, 'Iniciar coleta de dados')
+        self.startBtn.Bind(wx.EVT_BUTTON, self.OnStartDownloads)
+
+        geralSizer = wx.BoxSizer(wx.VERTICAL)
+        currentSizer = wx.BoxSizer(wx.VERTICAL)
+        
+        currentSizer.Add(self.curGauge, flag=wx.ALL | wx.EXPAND, border=5)
+        currentSizer.Add(self.filename_t, flag=wx.LEFT | wx.EXPAND, border=5)
+        currentSizer.Add(self.fileSize_t, flag=wx.LEFT | wx.EXPAND, border=5)
+        currentSizer.Add(self.fileSpeed_t, flag=wx.LEFT | wx.EXPAND, border=5)
+
+        geralSizer.Add(self.topGauge, flag=wx.ALL | wx.EXPAND, border=5)
+        geralSizer.Add(self.page_t, flag=wx.ALL | wx.EXPAND, border=5)
+
+        leftSizer.Add(self.status_t, flag=wx.TOP | wx.ALIGN_CENTER, border=5)
+        leftSizer.Add(geralSizer, flag=wx.TOP | wx.EXPAND, border=25)
+        leftSizer.Add(currentSizer, flag=wx.TOP | wx.EXPAND, border=25)
+        leftSizer.Add(self.startBtn, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
+
+        pub.subscribe(self.OnUpdateOverallGauge, 'update-overall-gauge')
+        pub.subscribe(self.OnUpdateOverallGaugeMaxValue, 'update-overall-gauge-maximum-value')
+        pub.subscribe(self.OnUpdateCurrentGauge, 'update-current-gauge')
+        pub.subscribe(self.OnUpdatePageInfo, 'update-page-info')
+        pub.subscribe(self.OnUpdateTransferSpeed,'update-transfer-status')
+        pub.subscribe(self.OnUpdateFilename,'update-filename')
+
+        self.timer = wx.Timer(self)
+
+        self.Bind(wx.EVT_TIMER, self.OnTimer)
+        self.Bind(wx.EVT_CLOSE, self.OnQuit)
+        
         self.SetSizer(master)
+
+    def OnUpdateOverallGauge(self, value):
+        ''' Atualiza a barra de progresso que mostra o estado de todos os downloads da página. '''
+        self.topGauge.SetValue(value)
+
+    def OnUpdateOverallGaugeMaxValue(self, value):
+        ''' Atualiza o número de "clicks" máximo que a barra de progresso geral tem. '''
+        self.topGauge.SetRange(value)
+
+    def OnUpdateCurrentGauge(self, value):
+        ''' Atualiza a barra de progresso do download corrente. '''
+        self.curGauge.SetValue(value)
+
+    def OnUpdatePageInfo(self, text):
+        ''' Atualiza o texto que traz informações sobre a página onde está sendo feito o download. '''
+        self.page_t.SetLabel(text)
+
+    def OnUpdateTransferSpeed(self, text):
+        ''' Atualiza o texto que mostra as informações de download e velocidade do arquivo atualmente sendo baixado. '''
+        self.fileSize_t.SetLabel(text[0])
+        self.fileSpeed_t.SetLabel(text[1])
+
+    def OnUpdateFilename(self, text):
+        ''' Atualiza o texto que mostra o nome do arquivo que está sendo baixado. '''
+        self.filename_t.SetLabel(text)
+
+    def OnTimer(self, event):
+        ''' Usada pra "ativar" as funções que usam do timer. Chamada a cada 1 segundo. '''
+        pub.sendMessage('ping-timer')
 
     def InitWebScraper(self):
         ''' Inicializa o web scrapper. '''
 
-        scrapper = web_scraper.Scraper()
-        self.text.SetLabel('''O web scrapper foi iniciado. '''
-        '''Esta janela irá fechar quando todos os downloads forem concluídos.''')
+        self.scraper_thread = web_scraper.Scraper(self)
+        self.timer.Start(1000)
 
-        self.Destroy()
+    def OnEndThreads(self):
+        ''' Usada para terminar todas as threads de donwloads ativas, se existirem. '''
+        pub.sendMessage('kill-thread')
+
+    def OnStartDownloads(self, event):
+        ''' Inicia a coleta de dados. '''
+
+        self.startBtn.Disable()
+        self.InitWebScraper()
+
+    def OnQuit(self, event):
+        ''' Chamada quando o usuário clica no botão para fechar o programa. '''
+
+        if self.scraper_thread and self.scraper_thread.isActive:
+            dlg = wx.MessageDialog(self, 'Ainda há downloads em andamento. Tem certeza que deseja cancelar e sair?',
+            'Downloads em andamento', wx.ICON_INFORMATION | wx.YES_NO)
+            res = dlg.ShowModal()
+            if res == wx.ID_YES:
+                self.OnEndThreads()
+                self.Destroy()
+        else:
+            self.OnEndThreads()
+            self.Destroy()
+
 
 app = wx.App()
 frame = Main(None)
