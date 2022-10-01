@@ -1,4 +1,3 @@
-import wx
 import requests
 from threading import Thread
 from pubsub import pub
