@@ -51,6 +51,8 @@ class DownloadThread(Thread):
                         if perc_temp != value:
                             perc_temp = value
                             self.update_gauge(value)
+            
+                self.update_gauge(100)
 
     def get_progress_text(self):
         '''Retorna uma tupla com estatísticas do quanto do arquivo já foi baixado
