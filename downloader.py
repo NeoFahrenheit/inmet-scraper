@@ -1,3 +1,5 @@
+import os
+from wx import CallAfter
 import requests
 from threading import Thread
 from pubsub import pub
@@ -17,42 +19,59 @@ class DownloadThread(Thread):
 
         self.start()
         
-
     def run(self):
         perc_temp = 0
-        r = requests.get(self.url, stream=True)
+        try:
+            r = requests.get(self.url, stream=True)
+        except requests.ConnectionError as e:
+            CallAfter(self.AddToLog, text=f"{e} ao baixar arquivo {self.url}")
+            return
 
         # Alguns sites não possuem o tamanho total do arquivo. Portanto,
         # neste caso, não dá pra mostrar progresso do download.
         self.total_length = r.headers.get('content-length')
         pub.subscribe(self.OnTimer, 'ping-timer')
+        isGoingOk = True
 
         with open(self.path, 'wb') as f:
-            if not self.total_length: # no content length header
-                self.update_gauge(0)
-                for data in r.iter_content(chunk_size=4096):
-                    if self.isActive:
-                        self.dl += len(data)
-                        self.dl_temp += len(data)
-                        f.write(data)
-
-            else:
-                self.total_length = int(self.total_length)
-                self.total_size = self.get_downloaded_value(self.total_length)
-                self.total_unit = self.get_unit(self.total_length)
-
-                for data in r.iter_content(chunk_size=4096):
-                    if self.isActive:
-                        self.dl += len(data)
-                        self.dl_temp += len(data)
-                        f.write(data)
-                        value = int(100 * self.dl / self.total_length)
-
-                        if perc_temp != value:
-                            perc_temp = value
-                            self.update_gauge(value)
+            try:
+                if not self.total_length: # no content length header
+                    self.update_gauge(0)
+                    for data in r.iter_content(chunk_size=4096):
+                        if self.isActive:
+                            self.dl += len(data)
+                            self.dl_temp += len(data)
+                            f.write(data)
             
-                self.update_gauge(100)
+                        else:
+                            isGoingOk = False
+
+                else:
+                    self.total_length = int(self.total_length)
+                    self.total_size = self.get_downloaded_value(self.total_length)
+                    self.total_unit = self.get_unit(self.total_length)
+
+                    for data in r.iter_content(chunk_size=4096):
+                        if self.isActive:
+                            self.dl += len(data)
+                            self.dl_temp += len(data)
+                            f.write(data)
+                            value = int(100 * self.dl / self.total_length)
+
+                            if perc_temp != value:
+                                perc_temp = value
+                                self.update_gauge(value)
+                        
+                        else:
+                            isGoingOk = False
+            except:
+                isGoingOk = False
+
+        # Se ocorrer algum problema no download, removemos o arquivo.
+        # Só queremos ter arquivos totalmente baixados.
+        if not isGoingOk:
+            os.remove(self.path)
+            CallAfter(self.AddToLog, text=f"Falha ao baixar aquivo {self.url}")
 
     def get_progress_text(self):
         '''Retorna uma tupla com estatísticas do quanto do arquivo já foi baixado
@@ -103,6 +122,11 @@ class DownloadThread(Thread):
         ''' Chamada a cada segundo. Entrega o texto de progresso do download atual para o Frame principal. '''
 
         pub.sendMessage('update-transfer-status', text=self.get_progress_text())
+
+    def AddToLog(self, text):
+        ''' Adiciona uma mensagem ao Log. '''
+
+        pub.sendMessage('log-text', text=text, isError=True)
 
     def OnEndThread(self):
         ''' Usada para mudar a variável `self.isActive` para posteriormente terminar esta thread. '''

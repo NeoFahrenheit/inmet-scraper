@@ -20,7 +20,7 @@ class Main(wx.Frame):
         rightSizer = wx.BoxSizer(wx.VERTICAL)
 
         self.panel = wx.Panel(self, -1)
-        self.rt = rt.RichTextCtrl(self.panel, -1, style=rt.RE_READONLY)
+        self.rt = rt.RichTextCtrl(self.panel, -1, style=wx.TE_READONLY)
         self.rt.GetCaret().Hide()
 
         rightSizer.Add(self.rt, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
@@ -88,7 +88,6 @@ class Main(wx.Frame):
         self.page_t.SetLabel(text)
         self.page_t.Wrap(300)
 
-
     def OnUpdateTransferSpeed(self, text):
         ''' Atualiza o texto que mostra as informações de download e velocidade do arquivo atualmente sendo baixado. '''
         self.fileSize_t.SetLabel(text[0])
@@ -105,7 +104,13 @@ class Main(wx.Frame):
     def OnAddToLog(self, text, isError=False):
         ''' Adiciona um texto a janela de log. '''
 
-        self.rt.AppendText(f"{text}\n")
+        if isError:
+            self.rt.BeginTextColour(wx.RED)
+        else:
+            self.rt.BeginTextColour(wx.BLACK)
+
+        self.rt.WriteText(f"{text}\n")
+        self.rt.EndTextColour()
 
     def InitWebScraper(self):
         ''' Inicializa o web scrapper. '''

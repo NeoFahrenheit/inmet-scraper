@@ -1,5 +1,5 @@
 import os
-import wx
+from wx import CallAfter
 from threading import Thread
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -50,21 +50,27 @@ class Scraper(Thread):
                 tag = link.find_element(By.TAG_NAME, 'a')
                 url = tag.get_attribute('href')
                 filename = os.path.basename(url)
+                path = f'files/inmet/{filename}'
                 pub.sendMessage('update-filename', text=filename)
-                
                 pub.sendMessage('update-overall-gauge', value=i)
-                dl_thread = downloader.DownloadThread(f'files/inmet/{filename}', url)
-                dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
-                wx.CallAfter(self.AddToLog, filename, page_url)
                 pub.sendMessage('update-current-gauge', value=0)
+
+                # Se o arquivo não existe, vamos baixá-lo.
+                if not os.path.isfile(path):
+                    dl_thread = downloader.DownloadThread(path, url)
+                    dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
+                    CallAfter(self.AddToLog, filename, page_url)
+                
                 i += 1
             
     def OnEndThread(self):
         ''' Usada para mudar a variável `self.isActive` para posteriormente terminar esta thread. '''
+
         self.isActive = False
 
     def AddToLog(self, filename, page_url):
         ''' Adiciona uma mensagem ao Log. '''
+
         pub.sendMessage('log-text', text=f"{filename} de {page_url} baixado com sucesso.")
 
 
