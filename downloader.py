@@ -35,7 +35,7 @@ class DownloadThread(Thread):
 
         with open(self.path, 'wb') as f:
             try:
-                if not self.total_length: # no content length header
+                if not self.total_length:
                     self.update_gauge(0)
                     for data in r.iter_content(chunk_size=4096):
                         if self.isActive:
