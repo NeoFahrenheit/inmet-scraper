@@ -1,5 +1,6 @@
 import os
 from wx import CallAfter
+import sys
 from threading import Thread
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -9,10 +10,12 @@ from pubsub import pub
 import downloader
 
 # A idéia dessa classe é ter uma thread para gerenciar outra thread que faz o download.
-# Desta maneira, impedimos que a GUI de ficar congelada.
+# Desta maneira, impedimos de a GUI de ficar congelada.
 class Scraper(Thread):
     def __init__(self, parent):
         Thread.__init__(self)
+
+        self.last_dados_historicos = ''
         self.isActive = True
         pub.subscribe(self.OnEndThread, 'kill-thread')
 
@@ -30,12 +33,14 @@ class Scraper(Thread):
 
     def run(self):
         self.dados_historicos_inmet()
+        # self.dados_estacoes_inmet()
+        self.isActive = False
 
     def dados_historicos_inmet(self):
         ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. '''
 
-        if not os.path.exists('files/inmet'):
-            os.mkdir('files/inmet')
+        if not os.path.exists('files/inmet/dados_historicos'):
+            os.makedirs('files/inmet/dados_historicos')
 
         page_url = 'https://portal.inmet.gov.br/dadoshistoricos'
         pub.sendMessage('update-page-info', text=f"Baixando da página {page_url}")
@@ -55,6 +60,12 @@ class Scraper(Thread):
                 pub.sendMessage('update-overall-gauge', value=i)
                 pub.sendMessage('update-current-gauge', value=0)
 
+                # tag.text é a descrição, em texto, dos links. Vamos pegar a data da última ocorrência dos dados históricos
+                # para agregar com tabelas atualizadas mais para frente.
+                if 'AUTOMÁTICA' not in tag.text:
+                    date = tag.text.split('(ATÉ ')[1]
+                    self.last_dados_historicos = date[:-1]
+
                 # Se o arquivo não existe, vamos baixá-lo.
                 if not os.path.isfile(path):
                     dl_thread = downloader.DownloadThread(path, url)
@@ -62,6 +73,18 @@ class Scraper(Thread):
                     CallAfter(self.AddToLog, filename, page_url)
                 
                 i += 1
+
+            else:
+                sys.exit()
+
+    def dados_estacoes_inmet(self):
+        ''' Faz o download dos .csv (Tabela de Dados das Estações) de todos os estados do Brasil 
+        usando o link `https://tempo.inmet.gov.br/TabelaEstacoes/A422#`. '''
+
+        page_url = 'https://tempo.inmet.gov.br/TabelaEstacoes/A422#'
+        self.driver.get(page_url)
+
+        elements = self.driver.find_element(By.XPATH, '//*[@id="root"]/div[1]/div[1]').click()
             
     def OnEndThread(self):
         ''' Usada para mudar a variável `self.isActive` para posteriormente terminar esta thread. '''
