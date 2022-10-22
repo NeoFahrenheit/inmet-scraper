@@ -52,7 +52,6 @@ df2['Data'] = pd.to_datetime(df2['Data'], format=input_date).dt.strftime(output_
 df2['Hora'] = df2['Hora'].apply(lambda x: convertToHour(x))
 
 print(df2.head())
+pd.concat([df1, df2], ignore_index=True).to_csv('test.csv', index=False)
 
 file_estacao.close() 
-
-pd.concat([df1, df2], ignore_index=True).to_csv('test.csv', index=False)
