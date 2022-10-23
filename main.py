@@ -1,5 +1,8 @@
+import os
 import wx
 import wx.richtext as rt
+import tempfile
+import json
 import web_scraper
 from pubsub import pub
 
@@ -8,11 +11,14 @@ class Main(wx.Frame):
         super().__init__(parent)
         self.scraper_thread = None
 
+        self.appData = {}
+
         self.SetTitle('DNC 4waTT')
         self.SetSize(800, 600)
         self.CenterOnScreen()
 
         self.InitUI()
+        self.LoadSaveFiles()
     
     def InitUI(self):
         master = wx.BoxSizer(wx.HORIZONTAL)
@@ -63,6 +69,7 @@ class Main(wx.Frame):
         pub.subscribe(self.OnUpdateTransferSpeed,'update-transfer-status')
         pub.subscribe(self.OnUpdateFilename,'update-filename')
         pub.subscribe(self.OnAddToLog, 'log-text')
+        pub.subscribe(self.SaveFile, 'save-file')
 
         self.timer = wx.Timer(self)
 
@@ -70,6 +77,30 @@ class Main(wx.Frame):
         self.Bind(wx.EVT_CLOSE, self.OnQuit)
         
         self.panel.SetSizer(master)
+
+    def LoadSaveFiles(self):
+        ''' Carrega dos arquivos salvos do programa. '''
+
+        home = os.path.expanduser('~')
+
+        if not os.path.isfile(f'{home}/.4watt.json'):
+            self.appData['last_data'] = ''  
+            self.appData['estacoes'] = {}
+
+            with open(f'{home}/.4watt.json', 'w') as f:
+                json.dump(self.appData, f, indent=4)
+
+        else:
+            with open(f'{home}/.4watt.json', 'r', encoding='utf-8') as f:
+                text = f.read()
+                self.appData = json.loads(text)
+
+    def SaveFile(self):
+        ''' Salva `self.appData` no disco. '''
+
+        home = os.path.expanduser('~')
+        with open(f'{home}/.4watt.json', 'w') as f:
+            json.dump(self.appData, f, indent=4)
 
     def OnUpdateOverallGauge(self, value):
         ''' Atualiza a barra de progresso que mostra o estado de todos os downloads da página. '''
@@ -115,7 +146,11 @@ class Main(wx.Frame):
     def InitWebScraper(self):
         ''' Inicializa o web scrapper. '''
 
-        self.scraper_thread = web_scraper.Scraper(self)
+        temp_path = f"{tempfile.gettempdir()}/4watt"
+        if not os.path.exists(temp_path):
+            os.makedirs(temp_path)
+
+        self.scraper_thread = web_scraper.Scraper(temp_path, self.appData)
         self.timer.Start(1000)  
 
     def OnEndThreads(self):

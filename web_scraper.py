@@ -8,39 +8,42 @@ from selenium.webdriver.chrome.options import Options
 from pubsub import pub
 
 import downloader
+import data_processing
 
 # A idéia dessa classe é ter uma thread para gerenciar outra thread que faz o download.
 # Desta maneira, impedimos de a GUI de ficar congelada.
 class Scraper(Thread):
-    def __init__(self, parent):
+    def __init__(self, temp_path, data):
         Thread.__init__(self)
 
-        self.last_dados_historicos = ''
-        self.isActive = True
-        pub.subscribe(self.OnEndThread, 'kill-thread')
+        self.temp_path = temp_path
+        self.appData = data
 
+        self.last_dados = ''
+        self.isActive = True
+        
+        pub.subscribe(self.OnEndThread, 'kill-thread')
         DRIVER_WIN_PATH = 'chromedriver.exe'
-        if not os.path.exists('files'):
-            os.mkdir('files')
 
         options = Options()
         options.headless = True
         options.add_argument("--window-size=1920,1200")
         self.driver = webdriver.Chrome(options=options, executable_path=DRIVER_WIN_PATH)
 
-        # self.driver = webdriver.Chrome(executable_path=DRIVER_WIN_PATH)
         self.start()
 
     def run(self):
         self.dados_historicos_inmet()
         # self.dados_estacoes_inmet()
-        self.isActive = False
 
     def dados_historicos_inmet(self):
         ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. '''
 
-        if not os.path.exists('files/inmet/dados_historicos'):
-            os.makedirs('files/inmet/dados_historicos')
+        if self.appData['last_data']:
+            # self.updateDataSet()
+            return
+
+        last_dados = ''
 
         page_url = 'https://portal.inmet.gov.br/dadoshistoricos'
         pub.sendMessage('update-page-info', text=f"Baixando da página {page_url}")
@@ -55,37 +58,34 @@ class Scraper(Thread):
                 tag = link.find_element(By.TAG_NAME, 'a')
                 url = tag.get_attribute('href')
                 filename = os.path.basename(url)
-                path = f'files/inmet/{filename}'
+                path = f'{self.temp_path}/{filename}'
                 pub.sendMessage('update-filename', text=filename)
                 pub.sendMessage('update-overall-gauge', value=i)
                 pub.sendMessage('update-current-gauge', value=0)
 
+                # Se o arquivo não existe, vamos baixá-lo.
+                if not os.path.isfile(path):
+                    dl_thread = downloader.DownloadThread(self, path, url)
+                    dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
+                    CallAfter(self.AddToLog, filename, page_url)
+                
                 # tag.text é a descrição, em texto, dos links. Vamos pegar a data da última ocorrência dos dados históricos
                 # para agregar com tabelas atualizadas mais para frente.
                 if 'AUTOMÁTICA' not in tag.text:
                     date = tag.text.split('(ATÉ ')[1]
-                    self.last_dados_historicos = date[:-1]
+                    last_dados = date[:-1]
 
-                # Se o arquivo não existe, vamos baixá-lo.
-                if not os.path.isfile(path):
-                    dl_thread = downloader.DownloadThread(path, url)
-                    dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
-                    CallAfter(self.AddToLog, filename, page_url)
-                
                 i += 1
 
             else:
                 sys.exit()
+        
+        self.appData['last_data'] = last_dados
+        pub.sendMessage('save-file')
+        dp = data_processing.DataProcessing(self.temp_path)
+        dp.concat_dados_historicos()
+    
 
-    def dados_estacoes_inmet(self):
-        ''' Faz o download dos .csv (Tabela de Dados das Estações) de todos os estados do Brasil 
-        usando o link `https://tempo.inmet.gov.br/TabelaEstacoes/A422#`. '''
-
-        page_url = 'https://tempo.inmet.gov.br/TabelaEstacoes/A422#'
-        self.driver.get(page_url)
-
-        elements = self.driver.find_element(By.XPATH, '//*[@id="root"]/div[1]/div[1]').click()
-            
     def OnEndThread(self):
         ''' Usada para mudar a variável `self.isActive` para posteriormente terminar esta thread. '''
 

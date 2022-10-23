@@ -7,8 +7,10 @@ from pubsub import pub
 class DownloadThread(Thread):
     ''' Esta é a Thread que faz o download. '''
     
-    def __init__(self, path, url):
+    def __init__(self, parent, path, url):
         Thread.__init__(self)
+
+        self.paren = parent
         self.isActive = True
         pub.subscribe(self.OnEndThread, 'kill-thread')
 
@@ -25,6 +27,7 @@ class DownloadThread(Thread):
             r = requests.get(self.url, stream=True)
         except requests.ConnectionError as e:
             CallAfter(self.AddToLog, text=f"{e} ao baixar arquivo {self.url}")
+            self.parent.isActive = False
             return
 
         # Alguns sites não possuem o tamanho total do arquivo. Portanto,
@@ -71,6 +74,7 @@ class DownloadThread(Thread):
         # Só queremos ter arquivos totalmente baixados.
         if not isGoingOk:
             os.remove(self.path)
+            self.parent.isActive = False
             CallAfter(self.AddToLog, text=f"Falha ao baixar aquivo {self.url}")
 
     def get_progress_text(self):
