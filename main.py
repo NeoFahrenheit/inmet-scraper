@@ -5,6 +5,7 @@ import tempfile
 import json
 import web_scraper
 from pubsub import pub
+import data_processing
 
 class Main(wx.Frame):
     def __init__(self, parent):
@@ -42,8 +43,12 @@ class Main(wx.Frame):
         self.topGauge = wx.Gauge(self.panel, -1, style=wx.GA_SMOOTH, size=(300, 30))
         self.curGauge = wx.Gauge(self.panel, -1, size=(300, 30))
         self.startBtn = wx.Button(self.panel, -1, 'Iniciar coleta de dados')
+        # self.updateBtn = wx.Button(self.panel, -1, 'Atualizar arquivos...')
+        self.warning_t = wx.StaticText(self.panel, -1, "Se precisar modificar os arquivos salvos na pasta Documentos,\n"
+        "faça uma cópia. Deixe os originais intactos.", style=wx.ALIGN_CENTER)
 
         self.startBtn.Bind(wx.EVT_BUTTON, self.OnStartDownloads)
+        # self.updateBtn.Bind(wx.EVT_BUTTON, self.OnUpdateFiles)
         self.filename_t.Wrap(100)
 
         geralSizer = wx.BoxSizer(wx.VERTICAL)
@@ -61,9 +66,12 @@ class Main(wx.Frame):
         leftSizer.Add(geralSizer, flag=wx.TOP | wx.EXPAND, border=25)
         leftSizer.Add(currentSizer, flag=wx.TOP | wx.EXPAND, border=75)
         leftSizer.Add(self.startBtn, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
+        # leftSizer.Add(self.updateBtn, flag=wx.TOP | wx.ALIGN_CENTER, border=25)
+        leftSizer.Add(self.warning_t, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
 
         pub.subscribe(self.OnUpdateOverallGauge, 'update-overall-gauge')
         pub.subscribe(self.OnUpdateOverallGaugeMaxValue, 'update-overall-gauge-maximum-value')
+        pub.subscribe(self.OnUpdateCurrentGaugeMaxValue, 'update-current-gauge-maximum-value')
         pub.subscribe(self.OnUpdateCurrentGauge, 'update-current-gauge')
         pub.subscribe(self.OnUpdatePageInfo, 'update-page-info')
         pub.subscribe(self.OnUpdateTransferSpeed,'update-transfer-status')
@@ -84,8 +92,7 @@ class Main(wx.Frame):
         home = os.path.expanduser('~')
 
         if not os.path.isfile(f'{home}/.4watt.json'):
-            self.appData['last_data'] = ''  
-            self.appData['estacoes'] = {}
+            self.appData['is_historial_concluded'] = False
 
             with open(f'{home}/.4watt.json', 'w') as f:
                 json.dump(self.appData, f, indent=4)
@@ -114,13 +121,18 @@ class Main(wx.Frame):
         ''' Atualiza a barra de progresso do download corrente. '''
         self.curGauge.SetValue(value)
 
+    def OnUpdateCurrentGaugeMaxValue(self, value):
+        ''' Atualiza o valor máximo da barra de download corrente. '''
+        self.curGauge.SetRange(value)
+
     def OnUpdatePageInfo(self, text):
         ''' Atualiza o texto que traz informações sobre a página onde está sendo feito o download. '''
         self.page_t.SetLabel(text)
         self.page_t.Wrap(300)
 
-    def OnUpdateTransferSpeed(self, text):
-        ''' Atualiza o texto que mostra as informações de download e velocidade do arquivo atualmente sendo baixado. '''
+    def OnUpdateTransferSpeed(self, text: list):
+        ''' Atualiza o texto que mostra as informações de download e velocidade do arquivo atualmente sendo baixado. 
+        Recebe uma lista com duas strings. '''
         self.fileSize_t.SetLabel(text[0])
         self.fileSpeed_t.SetLabel(text[1])
 
@@ -143,6 +155,8 @@ class Main(wx.Frame):
         self.rt.WriteText(f"{text}\n")
         self.rt.EndTextColour()
 
+        self.rt.ShowPosition(self.rt.GetLastPosition())
+
     def InitWebScraper(self):
         ''' Inicializa o web scrapper. '''
 
@@ -150,7 +164,8 @@ class Main(wx.Frame):
         if not os.path.exists(temp_path):
             os.makedirs(temp_path)
 
-        self.scraper_thread = web_scraper.Scraper(temp_path, self.appData)
+        self.scraper_thread = web_scraper.Scraper(self.appData)
+        self.scraper_thread.start()
         self.timer.Start(1000)  
 
     def OnEndThreads(self):
@@ -159,10 +174,23 @@ class Main(wx.Frame):
         pub.sendMessage('kill-thread')
 
     def OnStartDownloads(self, event):
-        ''' Inicia a coleta de dados. '''
+        """ Inicia a coleta de dados. """
 
         self.startBtn.Disable()
+        # self.updateBtn.Disable()
+
         self.InitWebScraper()
+
+    def OnUpdateFiles(self, event):
+        """ Chamada quando o botão de atualizar os arquivos é pressionado. 
+        Se os dados históricos já estiverem baixados e concatenados, atualiza-os. """
+
+        self.startBtn.Disable()
+        # self.updateBtn.Disable()
+
+        temp_path = f"{tempfile.gettempdir()}/4watt"
+        dp = data_processing.DataProcessing(temp_path, self.appData)
+        dp.update_estacoes()
 
     def OnQuit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''

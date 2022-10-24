@@ -1,6 +1,7 @@
 import os
 from wx import CallAfter
 import sys
+import tempfile
 from threading import Thread
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -12,14 +13,17 @@ import data_processing
 
 # A idéia dessa classe é ter uma thread para gerenciar outra thread que faz o download.
 # Desta maneira, impedimos de a GUI de ficar congelada.
+
+
 class Scraper(Thread):
-    def __init__(self, temp_path, data):
+    def __init__(self, data):
         Thread.__init__(self)
 
-        self.temp_path = temp_path
+        self.temp_path = f"{tempfile.gettempdir()}/4watt"
+        self.docs_path = os.path.expanduser('~/Documents/4watt')
         self.appData = data
 
-        self.last_dados = ''
+        self.is_historial_concluded = ''
         self.isActive = True
         
         pub.subscribe(self.OnEndThread, 'kill-thread')
@@ -30,20 +34,17 @@ class Scraper(Thread):
         options.add_argument("--window-size=1920,1200")
         self.driver = webdriver.Chrome(options=options, executable_path=DRIVER_WIN_PATH)
 
-        self.start()
-
     def run(self):
-        self.dados_historicos_inmet()
-        # self.dados_estacoes_inmet()
+        self.download_dados_inmet()
 
-    def dados_historicos_inmet(self):
+    def download_dados_inmet(self):
         ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. '''
 
-        if self.appData['last_data']:
-            # self.updateDataSet()
-            return
+        dp = data_processing.DataProcessing(self.temp_path, self.appData)
 
-        last_dados = ''
+        if self.appData['is_historial_concluded']:
+            dp.update_estacoes()
+            return
 
         page_url = 'https://portal.inmet.gov.br/dadoshistoricos'
         pub.sendMessage('update-page-info', text=f"Baixando da página {page_url}")
@@ -68,22 +69,17 @@ class Scraper(Thread):
                     dl_thread = downloader.DownloadThread(self, path, url)
                     dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
                     CallAfter(self.AddToLog, filename, page_url)
-                
-                # tag.text é a descrição, em texto, dos links. Vamos pegar a data da última ocorrência dos dados históricos
-                # para agregar com tabelas atualizadas mais para frente.
-                if 'AUTOMÁTICA' not in tag.text:
-                    date = tag.text.split('(ATÉ ')[1]
-                    last_dados = date[:-1]
 
                 i += 1
 
             else:
                 sys.exit()
         
-        self.appData['last_data'] = last_dados
+        dp.concat_dados_historicos(self.temp_path)
+        self.appData['is_historial_concluded'] = True
         pub.sendMessage('save-file')
-        dp = data_processing.DataProcessing(self.temp_path)
-        dp.concat_dados_historicos()
+        
+        dp.update_estacoes()
     
 
     def OnEndThread(self):

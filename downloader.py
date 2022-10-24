@@ -4,9 +4,10 @@ import requests
 from threading import Thread
 from pubsub import pub
 
+
 class DownloadThread(Thread):
-    ''' Esta é a Thread que faz o download. '''
-    
+    """ Esta é a Thread que faz o download. """
+
     def __init__(self, parent, path, url):
         Thread.__init__(self)
 
@@ -20,7 +21,7 @@ class DownloadThread(Thread):
         self.dl_temp = 0
 
         self.start()
-        
+
     def run(self):
         perc_temp = 0
         try:
@@ -45,7 +46,7 @@ class DownloadThread(Thread):
                             self.dl += len(data)
                             self.dl_temp += len(data)
                             f.write(data)
-            
+
                         else:
                             isGoingOk = False
 
@@ -64,7 +65,7 @@ class DownloadThread(Thread):
                             if perc_temp != value:
                                 perc_temp = value
                                 self.update_gauge(value)
-                        
+
                         else:
                             isGoingOk = False
             except:
@@ -78,7 +79,7 @@ class DownloadThread(Thread):
             CallAfter(self.AddToLog, text=f"Falha ao baixar aquivo {self.url}")
 
     def get_progress_text(self):
-        '''Retorna uma tupla com estatísticas do quanto do arquivo já foi baixado
+        '''Retorna uma tupla com estatísticas do quanto do arquivo já foi baixado 
         e a velocidade de download, respectivamente. '''
 
         downloaded = self.get_downloaded_value(self.dl)
@@ -88,10 +89,11 @@ class DownloadThread(Thread):
         speed_unit = self.get_unit(self.dl_temp)
 
         if self.total_length:
-            t = (f"{downloaded:.2f} {unit_downloaded} / {self.total_size:.2f} {self.total_unit}", f"{speed:.2f} {speed_unit}/s")
+            t = (f"{downloaded:.2f} {unit_downloaded} / {self.total_size:.2f} {self.total_unit}",
+                 f"{speed:.2f} {speed_unit}/s")
         else:
             t = (f"{downloaded:.2f} {unit_downloaded} / ?", f"{speed:.2f} {speed_unit}/s")
-            
+
         self.dl_temp = 0
         return t
 
@@ -109,7 +111,7 @@ class DownloadThread(Thread):
     def get_downloaded_value(self, size):
         ''' Retorna um inteiro. Dependendo de `size`, o número é entrege sem modificação,
         dividido 1024 (1KB) ou  por 1.048.756 (1MB). Deve ser usado junto com sua unidade correspondente. '''
-    
+
         if size < 1024:
             return size
         elif size < 1_048_576:
@@ -135,4 +137,5 @@ class DownloadThread(Thread):
     def OnEndThread(self):
         ''' Usada para mudar a variável `self.isActive` para posteriormente terminar esta thread. '''
         self.isActive = False
-        
+
+

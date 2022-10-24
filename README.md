@@ -15,4 +15,5 @@ pip install wxPython
 pip install selenium
 pip install pypubsub
 pip install requests
+pip install pandas
 ```
