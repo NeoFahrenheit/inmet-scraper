@@ -107,7 +107,7 @@ class DataProcessing:
                     dic = d_dic
 
                 # Vamos transformá-lo em um data frame de Pandas. Estamos ignorando as oito
-                # primeiras linhas, pois elas atrapalham o Pandas a identificar onde começam os headers.
+                # primeiras linhas, pois elas atrapalham o Pandas a identificar onde começam o header.
                 csv_obj = zip.open(csv)
                 df1 = pd.read_csv(csv_obj, encoding='latin-1', skiprows=8, delimiter=';')
 

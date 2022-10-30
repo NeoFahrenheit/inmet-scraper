@@ -3,9 +3,8 @@ from wx import CallAfter
 import sys
 import tempfile
 from threading import Thread
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+import requests
+from bs4 import BeautifulSoup
 from pubsub import pub
 
 import downloader
@@ -13,7 +12,6 @@ import data_processing
 
 # A idéia dessa classe é ter uma thread para gerenciar outra thread que faz o download.
 # Desta maneira, impedimos de a GUI de ficar congelada.
-
 
 class Scraper(Thread):
     def __init__(self, data):
@@ -27,12 +25,6 @@ class Scraper(Thread):
         self.isActive = True
         
         pub.subscribe(self.OnEndThread, 'kill-thread')
-        DRIVER_WIN_PATH = 'chromedriver.exe'
-
-        options = Options()
-        options.headless = True
-        options.add_argument("--window-size=1920,1200")
-        self.driver = webdriver.Chrome(options=options, executable_path=DRIVER_WIN_PATH)
 
     def run(self):
         self.download_dados_inmet()
@@ -47,17 +39,18 @@ class Scraper(Thread):
             return
 
         page_url = 'https://portal.inmet.gov.br/dadoshistoricos'
-        pub.sendMessage('update-page-info', text=f"Baixando da página {page_url}")
-        self.driver.get(page_url)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'}
+        html_page = requests.get(page_url, headers=headers)
 
-        elements = self.driver.find_elements(By.TAG_NAME, "article")
-        pub.sendMessage('update-overall-gauge-maximum-value', value=len(elements))
+        soup = BeautifulSoup(html_page.content, 'html.parser')
+        zips = soup.find_all('article', {'class': 'post-preview'})
+
+        pub.sendMessage('update-overall-gauge-maximum-value', value=len(zips))
         
         i = 1
-        for link in elements:
+        for zip in zips:
             if self.isActive:
-                tag = link.find_element(By.TAG_NAME, 'a')
-                url = tag.get_attribute('href')
+                url = zip.a['href']
                 filename = os.path.basename(url)
                 path = f'{self.temp_path}/{filename}'
                 pub.sendMessage('update-filename', text=filename)
