@@ -12,7 +12,7 @@ Instale as bibliotecas necessárias para rodar o programa. Execute a partir de m
 
 ```sh
 pip install wxPython
-pip install selenium
+pip install beautifulsoup4
 pip install pypubsub
 pip install requests
 pip install pandas
