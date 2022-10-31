@@ -1,3 +1,4 @@
+from genericpath import isfile
 import os
 from wx import CallAfter
 import zipfile
@@ -68,7 +69,6 @@ class DataProcessing:
         ''' Concatena os dados históricos para que todas as estações estejam em 
         um arquivo só. Usado para dados históricos para o 2019 e posteriores.'''
 
-        station_dic = {}
         isIt2019 = False
 
         files = os.listdir(temp_files)
@@ -76,6 +76,8 @@ class DataProcessing:
         CallAfter(pub.sendMessage, topicName='OnUpdateTransferSpeed', text=['', ''])
         CallAfter(pub.sendMessage, topicName='update-overall-gauge', value=0)
         CallAfter(pub.sendMessage, topicName='update-overall-gauge-maximum-value', value=zips_size)
+
+        files.sort()
 
         zip_count = 0
         for file in files:
@@ -107,7 +109,7 @@ class DataProcessing:
                     dic = d_dic
 
                 # Vamos transformá-lo em um data frame de Pandas. Estamos ignorando as oito
-                # primeiras linhas, pois elas atrapalham o Pandas a identificar onde começam o header.
+                # primeiras linhas, pois elas atrapalham o Pandas a identificar onde começam o headers.
                 csv_obj = zip.open(csv)
                 df1 = pd.read_csv(csv_obj, encoding='latin-1', skiprows=8, delimiter=';')
 
@@ -128,33 +130,23 @@ class DataProcessing:
                     df['Data'] = pd.to_datetime(df['Data'], format=input_date).dt.strftime(output_date)
                     df['Hora'] = df['Hora'].apply(lambda x: self.convert_to_hour_2019(x))
 
-                # Se um data frame já está contido no dicionário de DataFrames, vamos concatená-lo.
-                if estacao in station_dic:
-                    station_dic[estacao] = pd.concat([station_dic[estacao], df], ignore_index=True)
+                # Se um .csv já está na pasta de downloads, vamos concatená-lo.
+                file = os.path.join(self.docsPath, f"{estacao}.csv")
+                if os.path.isfile(file):
+                    on_disk = pd.read_csv(file)
+                    concated_df = pd.concat([on_disk, df], ignore_index=True)
+                    concated_df.to_csv(file, index=False)
                 
                 # Se não, vamos criar uma nova entrada com o nome da estação como chave e o DataFrame como valor.
                 # Assim, quando processarmos o próximo .zip, ele será concatenado com seu DataFrame antecessor.
                 else:
-                    station_dic[estacao] = df
+                    df.to_csv(file, index=False)
 
                 current_csv_count += 1
                 CallAfter(pub.sendMessage, topicName='update-current-gauge', value=current_csv_count)
 
             zip_count += 1
             CallAfter(pub.sendMessage, topicName='update-overall-gauge', value=zip_count)
-
-        # Agora, só precisamos salvar todos os DataFrames no disco. Cuidado com sua RAM.
-        CallAfter(pub.sendMessage, topicName='update-page-info', text=f"Salvando os arquivos .csv do disco...")
-        CallAfter(pub.sendMessage, topicName='update-current-gauge-maximum-value', value=len(os.listdir(self.docsPath)))
-        CallAfter(pub.sendMessage, topicName='update-current-gauge', value=0)
-
-        save_count = 0
-        for key, value in station_dic.items():
-            CallAfter(pub.sendMessage, topicName='update-filename', text=f"Escrevendo {key}.csv no disco...")
-            value.to_csv(f"{self.docsPath}/{key}.csv", index=False)
-
-            save_count += 1
-            CallAfter(pub.sendMessage, topicName='update-current-gauge', value=save_count)
 
     def update_estacoes(self):
         ''' Esta função só deve ser chamada quando todos os dados históricos já estiverem baixados e concatenados. 

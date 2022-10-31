@@ -45,7 +45,7 @@ class Main(wx.Frame):
         self.startBtn = wx.Button(self.panel, -1, 'Iniciar coleta de dados')
         # self.updateBtn = wx.Button(self.panel, -1, 'Atualizar arquivos...')
         self.warning_t = wx.StaticText(self.panel, -1, "Se precisar modificar os arquivos salvos na pasta Documentos,\n"
-        "faça uma cópia. Deixe os originais intactos.", style=wx.ALIGN_CENTER)
+        "faça uma cópia. Deixe os originais intactos.\nNão abra os documentos durante o processamento.", style=wx.ALIGN_CENTER)
 
         self.startBtn.Bind(wx.EVT_BUTTON, self.OnStartDownloads)
         # self.updateBtn.Bind(wx.EVT_BUTTON, self.OnUpdateFiles)
@@ -66,7 +66,6 @@ class Main(wx.Frame):
         leftSizer.Add(geralSizer, flag=wx.TOP | wx.EXPAND, border=25)
         leftSizer.Add(currentSizer, flag=wx.TOP | wx.EXPAND, border=75)
         leftSizer.Add(self.startBtn, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
-        # leftSizer.Add(self.updateBtn, flag=wx.TOP | wx.ALIGN_CENTER, border=25)
         leftSizer.Add(self.warning_t, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
 
         pub.subscribe(self.OnUpdateOverallGauge, 'update-overall-gauge')
