@@ -133,7 +133,9 @@ class DataProcessing:
                 # Se um .csv já está na pasta de downloads, vamos concatená-lo.
                 file = os.path.join(self.docsPath, f"{estacao}.csv")
                 if os.path.isfile(file):
-                    on_disk = pd.read_csv(file)
+                    on_disk = pd.read_csv(file, dtype={'Chuva': object, 'Pressao': object, 
+                    'Radiacao': object, 'Temperatura': object, 'Umidade': object})
+
                     concated_df = pd.concat([on_disk, df], ignore_index=True)
                     concated_df.to_csv(file, index=False)
                 
