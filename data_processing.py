@@ -3,6 +3,7 @@ import os
 from wx import CallAfter
 import zipfile
 import pandas as pd
+import numpy as np
 from datetime import timedelta, date
 import requests
 from pubsub import pub
@@ -43,6 +44,23 @@ class DataProcessing:
         if not os.path.isdir(self.docsPath):
             os.mkdir(self.docsPath)
 
+    def replace_comma(self, number: str | float) -> float | str:
+        """ Retorna a string `number` com a vírgula substituída por um ponto. """
+
+        if isinstance(number, str):
+            new_number = number.replace(',', '.')
+            return new_number
+
+        return number
+
+    def convert_to_quilowatt(self, number: float | int | str) -> float | str:
+        """ Converte kJ/m² para kWh/m². Se o campo estiver vazio, retorna uma string vazia. """
+
+        if isinstance(number, float):
+            return number / 3600
+        else:
+            return ''
+
     def convert_to_hour(self, n: str) -> str:
         ''' Recebe uma str da hora no formato '0', '100', '200', ..., '2200', '2300'
         e retorna no formato HH:MM. '''
@@ -64,6 +82,14 @@ class DataProcessing:
 
         n = n.split()[0]
         return n[:2] + ':' + '00'
+
+    def clip_number(self, number: float) -> float | str:
+        """ Se `number` for menor que 30, retorna uma string vazia. """
+
+        if number < 30:
+            return ''
+        else:
+            return number
 
     def concat_dados_historicos(self, temp_files):
         ''' Concatena os dados históricos para que todas as estações estejam em 
@@ -229,3 +255,50 @@ class DataProcessing:
             return r.json()
         except:
             return None
+
+    def do_data_cleaning(self):
+        """ Remove os valores negativos e NaN dos .csv e substitui para 0. """
+
+        for csv in os.listdir(self.docsPath)[:1]:
+            path = os.path.join(self.docsPath, csv)
+            
+            df = pd.read_csv(path, parse_dates=['Data'])
+
+            df['Hora'] = pd.to_datetime(df['Hora']).dt.time
+
+            # Normalizando NaN para -9999 para ficar em par com o resto do .csv.
+            df['Chuva'].fillna(-9999, inplace=True)
+            df['Pressao'].fillna(-9999, inplace=True)
+            df['Radiacao'].fillna(-9999, inplace=True)
+            df['Temperatura'].fillna(-9999, inplace=True)
+            df['Umidade'].fillna(-9999, inplace=True)
+
+
+            only_in = [x for x in d_dic.keys()][2:]
+            # Transformando-os todos para float.
+            for column in only_in:
+                df[column] = df[column].apply(lambda x: self.replace_comma(x))
+                df[column] = df[column].astype(float)
+
+            # Não podemos colocar 0 em colunas onde há dados inválidos. Os dados podem não existir por
+            # erro de equipamento. Ex: Se choveu em determinado dia e houve erro ou manutenção, não podemos
+            # substituí-lo por 0.
+
+            # Quando encontrarmos ocorrências de -9999, presumimos que os dados são inválido e / ou
+            # não foram coletados. Vamos deixá-los vazios para não confundir os modelos.
+            df['Temperatura'] = df['Temperatura'].apply(lambda x: self.clip_number(x))
+            df['Umidade'] = df['Umidade'].apply(lambda x: self.clip_number(x))
+            df['Radiacao'] = df['Radiacao'].apply(lambda x: self.clip_number(x))
+            df['Chuva'] = df['Chuva'].apply(lambda x: self.clip_number(x))
+            df['Pressao'] = df['Pressao'].apply(lambda x: self.clip_number(x))
+
+            # Antes de continuar, vamos converter kJ/m² para kWh/m².
+            df['Radiacao'] = df['Radiacao'].apply(lambda x: self.convert_to_quilowatt(x))
+
+            # Vamos, vamos dropar linhas onde não existam dados válidos para radiação,
+            # não importa o período do dia. Afinal, Radiação é nosso target.
+            df.drop(df[df.Radiacao == ''].index, inplace=True)
+
+            df.to_csv('/home/leandro/Desktop/test.csv', index=False)
+
+    

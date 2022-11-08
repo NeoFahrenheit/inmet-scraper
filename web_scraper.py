@@ -27,7 +27,9 @@ class Scraper(Thread):
         pub.subscribe(self.OnEndThread, 'kill-thread')
 
     def run(self):
-        self.download_dados_inmet()
+        # self.download_dados_inmet()
+        dp = data_processing.DataProcessing(self.temp_path, self.appData)
+        dp.do_data_cleaning()
 
     def download_dados_inmet(self):
         ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. '''
