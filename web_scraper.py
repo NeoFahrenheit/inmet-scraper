@@ -1,92 +1,71 @@
 import os
-from wx import CallAfter
-import sys
-import tempfile
-from threading import Thread
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 from pubsub import pub
 
 import downloader
-import data_processing
 
-# A idéia dessa classe é ter uma thread para gerenciar outra thread que faz o download.
-# Desta maneira, impedimos de a GUI de ficar congelada.
-
-class Scraper(Thread):
-    def __init__(self, data):
-        Thread.__init__(self)
-
-        self.temp_path = f"{tempfile.gettempdir()}/4watt"
-        self.docs_path = os.path.expanduser('~/Documents/4watt')
-        self.appData = data
-
-        self.is_historial_concluded = ''
-        self.isActive = True
-        
-        pub.subscribe(self.OnEndThread, 'kill-thread')
-
-    def run(self):
-        # self.download_dados_inmet()
-        dp = data_processing.DataProcessing(self.temp_path, self.appData)
-        dp.do_data_cleaning()
+class Scraper():
+    def __init__(self, app_data):
+        self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
+        self.app_data = app_data
 
     def download_dados_inmet(self):
-        ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. '''
-
-        dp = data_processing.DataProcessing(self.temp_path, self.appData)
-
-        if self.appData['is_historial_concluded']:
-            dp.update_estacoes()
-            return
+        ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. 
+        Não baixa arquivos já existentes. '''
 
         page_url = 'https://portal.inmet.gov.br/dadoshistoricos'
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'}
-        html_page = requests.get(page_url, headers=headers)
+        try:
+            html_page = requests.get(page_url, headers=headers)
+        except:
+            raise Exception('Could not communicate with the host.')
 
-        soup = BeautifulSoup(html_page.content, 'html.parser')
+        soup = BeautifulSoup(html_page.content, 'html.parser')        
         zips = soup.find_all('article', {'class': 'post-preview'})
+        last_on_zip = self.check_partial_zip(zips)
 
-        pub.sendMessage('update-overall-gauge-maximum-value', value=len(zips))
-        
-        i = 1
         for zip in zips:
-            if self.isActive:
-                url = zip.a['href']
-                filename = os.path.basename(url)
-                path = f'{self.temp_path}/{filename}'
-                pub.sendMessage('update-filename', text=filename)
-                pub.sendMessage('update-overall-gauge', value=i)
-                pub.sendMessage('update-current-gauge', value=0)
+            url = zip.a['href']
+            filename = os.path.basename(url)
+            path = os.path.join(self.historical_folder, filename)
 
-                # Se o arquivo não existe, vamos baixá-lo.
-                if not os.path.isfile(path):
-                    dl_thread = downloader.DownloadThread(self, path, url)
-                    dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
-                    CallAfter(self.AddToLog, filename, page_url)
+            # Se o arquivo não existe, vamos baixá-lo.
+            if not os.path.isfile(path):
+                dl_thread = downloader.DownloadThread(self, path, url)
+                dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
 
-                i += 1
+        # Apenas no final, quando tivermos certeza que todos os arquivos foram baixados,
+        # é seguro atualizar 'last_zip_date' no arquivo, se necessário.
+        if last_on_zip != '':
+            self.app_data['last_zip_date'] = last_on_zip
+            pub.sendMessage('save-file')
 
-            else:
-                sys.exit()
-        
-        dp.concat_dados_historicos(self.temp_path)
-        self.appData['is_historial_concluded'] = True
-        pub.sendMessage('save-file')
-        
-        dp.update_estacoes()
-    
+    def check_partial_zip(self, zips: list) -> bool:
+        """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 
+        contém os dados até determinado mês. Esta função identifica a data deste arquivo parcial 
+        para detectar se ela já contém os dados do ano completos ou foi atualizada.
+        `Caso sim`, esta pasta é deletada para ser baixada novamente, não aqui, e esta função 
+        retorna uma string com a última data parcial encontrada. Retorna uma string vazia, caso contrário. """
 
-    def OnEndThread(self):
-        ''' Usada para mudar a variável `self.isActive` para posteriormente terminar esta thread. '''
+        if self.app_data['last_zip_date'] == '':
+            return ''
 
-        self.isActive = False
+        # Qual é o ano do zip com data parcial?
+        for zip in zips:
+            text = zip.a.text.split('(')[1]
+            text = text[:-1]    # Retirando o último parêntese.
 
-    def AddToLog(self, filename, page_url):
-        ''' Adiciona uma mensagem ao Log. '''
+            if text != 'AUTOMÁTICA':
+                # Este text, aqui, tá no formato 'ATÉ dd-mm-yyyy'
+                date = text.split('ATÉ ')[1]
 
-        pub.sendMessage('log-text', text=f"{filename} de {page_url} baixado com sucesso.")
+                # As datas estão diferentes?
+                if self.app_data['last_zip_date'] != date:
+                    year = self.app_data['last_zip_date'].split('-')[2]
+                    os.remove(os.path.join(self.historical_folder, f"{year}.zip"))
+                    return date
 
-
-
-
+        return ''

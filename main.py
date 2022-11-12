@@ -1,34 +1,45 @@
 import os
 import wx
 import wx.richtext as rt
-import tempfile
 import json
+from pathlib import Path
 import web_scraper
 from pubsub import pub
 import data_processing
 
 class Main(wx.Frame):
     def __init__(self, parent):
-        super().__init__(parent, style=wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER ^ wx.MAXIMIZE_BOX)
-        self.scraper_thread = None
+        super().__init__(parent, style=wx.DEFAULT_FRAME_STYLE)
 
-        self.appData = {}
+        self.app_data = {}
+        self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.appdata_folder = Path.home()
 
         self.SetTitle('DNC 4waTT')
-        self.SetSize(690, 600)
-        self.InitUI()
+        self.SetSize(1000, 680)
+        self.init_ui()
+        self.load_file()
         
+        self.make_subscriptions()
         self.CenterOnScreen()
 
+        self.timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_timer)
+        self.timer.Start(1000)
+
+    def make_subscriptions(self):
+        """ Faz os `pub.subscribe` necessários para essa classe. """
+
+        pub.subscribe(self.save_file, 'save-file')
     
-    def InitUI(self):
+    def init_ui(self):
         """ Inicializa a UI e seus widgets. """
 
-        self.InitMenu()
+        self.init_menu()
 
-        master = wx.BoxSizer(wx.HORIZONTAL)
-        leftSizer = wx.BoxSizer(wx.VERTICAL)
-        rightSizer = wx.BoxSizer(wx.VERTICAL)
+        master_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        station_ctrl_sizer = wx.BoxSizer(wx.VERTICAL)
+        station_sizer = wx.BoxSizer(wx.VERTICAL)
 
         self.panel = wx.Panel(self)
         self.status_bar = self.CreateStatusBar()
@@ -36,16 +47,16 @@ class Main(wx.Frame):
         # Criando o wx.ListCtrl.
         self.estacaoList = wx.ListCtrl(self.panel, -1, style=wx.LC_REPORT)
         self.estacaoList.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
-        self.estacaoList.InsertColumn(1, 'Concatenação', wx.LIST_FORMAT_CENTRE)
-        self.estacaoList.InsertColumn(2, 'Atualização', wx.LIST_FORMAT_CENTRE)
+        self.estacaoList.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
+        self.estacaoList.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
 
         self.estacaoList.SetColumnWidth(0, 120)
         self.estacaoList.SetColumnWidth(1, 120)
         self.estacaoList.SetColumnWidth(2, 120)
 
-        self.estacaoList.InsertItem(0, 'teste')
-        self.estacaoList.SetItem(0, 1, 'Concatenado')
-        self.estacaoList.SetItem(0, 2, 'Desatualizado')
+        self.estacaoList.InsertItem(0, 'A807')
+        self.estacaoList.SetItem(0, 1, 'Não')
+        self.estacaoList.SetItem(0, 2, 'Não')
 
         # Criando o sizer de seleção / pesquisa.
         comboSizer = wx.StaticBoxSizer(wx.VERTICAL, self.panel, 'Adicionar estações')
@@ -85,7 +96,7 @@ class Main(wx.Frame):
         self.detailsList.InsertColumn(1, 'Valor', wx.LIST_FORMAT_CENTRE)
 
         self.detailsList.SetColumnWidth(0, 100)
-        self.detailsList.SetColumnWidth(1, 150)
+        self.detailsList.SetColumnWidth(1, 120)
 
         self.detailsList.InsertItem(0, 'Região')
         self.detailsList.InsertItem(1, 'UF')
@@ -94,21 +105,25 @@ class Main(wx.Frame):
         self.detailsList.InsertItem(4, 'Latitude')
         self.detailsList.InsertItem(5, 'Longitude')
         self.detailsList.InsertItem(6, 'Fundação')
-        detailsSizer.Add(self.detailsList, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        detailsSizer.Add(self.detailsList, flag=wx.ALL | wx.EXPAND, border=5)
+
+        # Criando a caixa de texto do logger.
+        self.rt = rt.RichTextCtrl(self.panel, -1, style=rt.RE_READONLY)
 
         # Adionando os sizers ao master.
-        leftSizer.Add(self.estacaoList, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        station_ctrl_sizer.Add(self.estacaoList, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
-        rightSizer.Add(comboSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
-        rightSizer.Add(searchSizer, proportion=3, flag=wx.ALL | wx.EXPAND, border=5)
-        rightSizer.Add(detailsSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        station_sizer.Add(comboSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        station_sizer.Add(searchSizer, proportion=3, flag=wx.ALL | wx.EXPAND, border=5)
+        station_sizer.Add(detailsSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
-        master.Add(leftSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
-        master.Add(rightSizer, proportion=3, flag=wx.ALL, border=5)
+        master_sizer.Add(station_ctrl_sizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        master_sizer.Add(station_sizer, proportion=1, flag=wx.ALL, border=5)
+        master_sizer.Add(self.rt, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
 
-        self.panel.SetSizerAndFit(master)
+        self.panel.SetSizerAndFit(master_sizer)
 
-    def InitMenu(self):
+    def init_menu(self):
         """ Inicializa o menu. """
 
         menu = wx.MenuBar()
@@ -122,7 +137,39 @@ class Main(wx.Frame):
 
         self.SetMenuBar(menu)
 
-    def OnQuit(self, event):
+    def load_file(self):
+        """ Carrega o arquivo de configuração para `self.app_data`. Se ele não existir,
+        será criado com as configurações padrão. """
+
+        path = os.path.join(self.appdata_folder, '.4waTT.json')
+        file_exists = os.path.isfile(path)
+
+        if file_exists:
+            with open(path, 'r', encoding='utf-8') as f:
+                text = f.read()
+                self.app_data = json.loads(text)
+        else:
+            self.app_data = {
+                'last_zip_date': '',    # Data dos últimos dados no último zip.
+                'estacoes': {}
+            }
+            
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(self.app_data, f, indent=4)
+
+    def save_file(self):
+        """ Salva `self.app_data` no arquivo de configuração. """
+
+        path = os.path.join(self.appdata_folder, '.4waTT.json')
+        with open(path, 'w', encoding='utf-8') as f:
+                json.dump(self.app_data, f, indent=4)
+
+    def on_timer(self, event):
+        """ Chamada a cada segundo. Chama `pub.sendMessage('ping-timer')`. """
+
+        pub.sendMessage('ping-timer')
+
+    def on_quit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''
 
         if self.scraper_thread and self.scraper_thread.isActive:
