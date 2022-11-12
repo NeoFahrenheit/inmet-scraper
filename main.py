@@ -19,177 +19,73 @@ class Main(wx.Frame):
         self.CenterOnScreen()
 
         self.InitUI()
-        self.LoadSaveFiles()
     
     def InitUI(self):
+        """ Inicializa a UI e seus widgets. """
+
         master = wx.BoxSizer(wx.HORIZONTAL)
         leftSizer = wx.BoxSizer(wx.VERTICAL)
         rightSizer = wx.BoxSizer(wx.VERTICAL)
 
-        self.panel = wx.Panel(self, -1)
-        self.rt = rt.RichTextCtrl(self.panel, -1, style=wx.TE_READONLY)
-        self.rt.GetCaret().Hide()
+        self.panel = wx.Panel(self)
+        self.status_bar = self.CreateStatusBar()
 
-        rightSizer.Add(self.rt, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        # Criando o wx.ListCtrl.
+        self.list = wx.ListCtrl(self.panel, -1, style=wx.LC_REPORT)
+        self.list.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
+        self.list.InsertColumn(1, 'Estado', wx.LIST_FORMAT_CENTRE)
+        self.list.InsertColumn(2, 'Cidade', wx.LIST_FORMAT_CENTRE)
+        self.list.InsertColumn(3, 'Concatenação', wx.LIST_FORMAT_CENTRE)
+        self.list.InsertColumn(4, 'Atualização', wx.LIST_FORMAT_CENTRE)
 
-        master.Add(leftSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
-        master.Add(rightSizer, proportion=3, flag=wx.ALL | wx.EXPAND, border=5)
+        self.list.SetColumnWidth(0, 250)
+        self.list.SetColumnWidth(1, 120)
+        self.list.SetColumnWidth(2, 120)
+        self.list.SetColumnWidth(3, 120)
+        self.list.SetColumnWidth(4, 120)
 
-        self.status_t = wx.StaticText(self.panel, -1, 'Web Scraper de dados meteorológicos')
-        self.page_t = wx.StaticText(self.panel, -1, '') # Nome da página de download atual
-        self.filename_t = wx.StaticText(self.panel, -1, '', style=wx.ALIGN_LEFT) # Nome do arquivo.
-        self.fileSize_t = wx.StaticText(self.panel, -1, '', style=wx.ALIGN_LEFT)  # Status de download
-        self.fileSpeed_t = wx.StaticText(self.panel, -1, '', style=wx.ALIGN_LEFT)  # Status de download
-        self.topGauge = wx.Gauge(self.panel, -1, style=wx.GA_SMOOTH, size=(300, 30))
-        self.curGauge = wx.Gauge(self.panel, -1, size=(300, 30))
-        self.startBtn = wx.Button(self.panel, -1, 'Iniciar coleta de dados')
-        # self.updateBtn = wx.Button(self.panel, -1, 'Atualizar arquivos...')
-        self.warning_t = wx.StaticText(self.panel, -1, "Se precisar modificar os arquivos salvos na pasta Documentos,\n"
-        "faça uma cópia. Deixe os originais intactos.\nNão abra os documentos durante o processamento.", style=wx.ALIGN_CENTER)
+        self.list.EnableCheckBoxes()
 
-        self.startBtn.Bind(wx.EVT_BUTTON, self.OnStartDownloads)
-        # self.updateBtn.Bind(wx.EVT_BUTTON, self.OnUpdateFiles)
-        self.filename_t.Wrap(100)
+        # Criando o sizer de seleção / pesquisa.
+        topRightSizer = wx.BoxSizer(wx.VERTICAL)
 
-        geralSizer = wx.BoxSizer(wx.VERTICAL)
-        currentSizer = wx.BoxSizer(wx.VERTICAL)
+        size = (250, 34)
+        text_size = (100, 23)
+
+        # Campo pesquisar.
+        searchSizer = wx.BoxSizer(wx.HORIZONTAL)
+        search = wx.SearchCtrl(self.panel, -1, size=size)
+        searchSizer.Add(wx.StaticText(self.panel, -1, 'Pesquisar', size=text_size), flag=wx.RIGHT, border=5)
+        searchSizer.Add(search)
+
+        # Campo de seleção de estado.
+        stateSizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.state = wx.ComboBox(self.panel, -1, 'Acre', size=size, choices=[], style=wx.CB_READONLY)
+        stateSizer.Add(wx.StaticText(self.panel, -1, 'Estado', size=text_size), flag=wx.TOP, border=7)
+        stateSizer.Add(self.state)
         
-        currentSizer.Add(self.curGauge, flag=wx.ALL | wx.EXPAND, border=5)
-        currentSizer.Add(self.filename_t, flag=wx.LEFT | wx.EXPAND, border=5)
-        currentSizer.Add(self.fileSize_t, flag=wx.LEFT | wx.EXPAND, border=5)
-        currentSizer.Add(self.fileSpeed_t, flag=wx.LEFT | wx.EXPAND, border=5)
+        # Campo de seleção de cidade.
+        citySizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.city = wx.ComboBox(self.panel, -1, 'Acre', size=size, choices=[], style=wx.CB_READONLY)
+        citySizer.Add(wx.StaticText(self.panel, -1, 'Cidade', size=text_size), flag=wx.TOP, border=7)
+        citySizer.Add(self.city)
 
-        geralSizer.Add(self.topGauge, flag=wx.ALL | wx.EXPAND, border=5)
-        geralSizer.Add(self.page_t, flag=wx.ALL | wx.EXPAND, border=5)
+        # Botão de adicionar.
+        addBtn = wx.Button(self.panel, -1, 'Adicionar')
 
-        leftSizer.Add(self.status_t, flag=wx.TOP | wx.ALIGN_CENTER, border=5)
-        leftSizer.Add(geralSizer, flag=wx.TOP | wx.EXPAND, border=25)
-        leftSizer.Add(currentSizer, flag=wx.TOP | wx.EXPAND, border=75)
-        leftSizer.Add(self.startBtn, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
-        leftSizer.Add(self.warning_t, flag=wx.TOP | wx.ALIGN_CENTER, border=50)
-
-        pub.subscribe(self.OnUpdateOverallGauge, 'update-overall-gauge')
-        pub.subscribe(self.OnUpdateOverallGaugeMaxValue, 'update-overall-gauge-maximum-value')
-        pub.subscribe(self.OnUpdateCurrentGaugeMaxValue, 'update-current-gauge-maximum-value')
-        pub.subscribe(self.OnUpdateCurrentGauge, 'update-current-gauge')
-        pub.subscribe(self.OnUpdatePageInfo, 'update-page-info')
-        pub.subscribe(self.OnUpdateTransferSpeed,'update-transfer-status')
-        pub.subscribe(self.OnUpdateFilename,'update-filename')
-        pub.subscribe(self.OnAddToLog, 'log-text')
-        pub.subscribe(self.SaveFile, 'save-file')
-
-        self.timer = wx.Timer(self)
-
-        self.Bind(wx.EVT_TIMER, self.OnTimer)
-        self.Bind(wx.EVT_CLOSE, self.OnQuit)
+        topRightSizer.Add(searchSizer, flag=wx.ALL, border=5)
+        topRightSizer.Add(stateSizer, flag=wx.ALL, border=5)
+        topRightSizer.Add(citySizer, flag=wx.ALL, border=5)
+        topRightSizer.Add(addBtn, flag=wx.ALL, border=5)
         
-        self.panel.SetSizer(master)
+        rightSizer.Add(topRightSizer, flag=wx.EXPAND)
 
-    def LoadSaveFiles(self):
-        ''' Carrega dos arquivos salvos do programa. '''
 
-        home = os.path.expanduser('~')
+        leftSizer.Add(self.list)
 
-        if not os.path.isfile(f'{home}/.4watt.json'):
-            self.appData['is_historial_concluded'] = False
-
-            with open(f'{home}/.4watt.json', 'w') as f:
-                json.dump(self.appData, f, indent=4)
-
-        else:
-            with open(f'{home}/.4watt.json', 'r', encoding='utf-8') as f:
-                text = f.read()
-                self.appData = json.loads(text)
-
-    def SaveFile(self):
-        ''' Salva `self.appData` no disco. '''
-
-        home = os.path.expanduser('~')
-        with open(f'{home}/.4watt.json', 'w') as f:
-            json.dump(self.appData, f, indent=4)
-
-    def OnUpdateOverallGauge(self, value):
-        ''' Atualiza a barra de progresso que mostra o estado de todos os downloads da página. '''
-        self.topGauge.SetValue(value)
-
-    def OnUpdateOverallGaugeMaxValue(self, value):
-        ''' Atualiza o número de "clicks" máximo que a barra de progresso geral tem. '''
-        self.topGauge.SetRange(value)
-
-    def OnUpdateCurrentGauge(self, value):
-        ''' Atualiza a barra de progresso do download corrente. '''
-        self.curGauge.SetValue(value)
-
-    def OnUpdateCurrentGaugeMaxValue(self, value):
-        ''' Atualiza o valor máximo da barra de download corrente. '''
-        self.curGauge.SetRange(value)
-
-    def OnUpdatePageInfo(self, text):
-        ''' Atualiza o texto que traz informações sobre a página onde está sendo feito o download. '''
-        self.page_t.SetLabel(text)
-        self.page_t.Wrap(300)
-
-    def OnUpdateTransferSpeed(self, text: list):
-        ''' Atualiza o texto que mostra as informações de download e velocidade do arquivo atualmente sendo baixado. 
-        Recebe uma lista com duas strings. '''
-        self.fileSize_t.SetLabel(text[0])
-        self.fileSpeed_t.SetLabel(text[1])
-
-    def OnUpdateFilename(self, text):
-        ''' Atualiza o texto que mostra o nome do arquivo que está sendo baixado. '''
-        self.filename_t.SetLabel(text)
-
-    def OnTimer(self, event):
-        ''' Usada pra "ativar" as funções que usam do timer. Chamada a cada 1 segundo. '''
-        pub.sendMessage('ping-timer')
-
-    def OnAddToLog(self, text, isError=False):
-        ''' Adiciona um texto a janela de log. '''
-
-        if isError:
-            self.rt.BeginTextColour(wx.RED)
-        else:
-            self.rt.BeginTextColour(wx.BLACK)
-
-        self.rt.WriteText(f"{text}\n")
-        self.rt.EndTextColour()
-
-        self.rt.ShowPosition(self.rt.GetLastPosition())
-
-    def InitWebScraper(self):
-        ''' Inicializa o web scrapper. '''
-
-        temp_path = f"{tempfile.gettempdir()}/4watt"
-        if not os.path.exists(temp_path):
-            os.makedirs(temp_path)
-
-        self.scraper_thread = web_scraper.Scraper(self.appData)
-        self.scraper_thread.start()
-        self.timer.Start(1000)  
-
-    def OnEndThreads(self):
-        ''' Usada para terminar todas as threads de donwloads ativas, se existirem. '''
-
-        pub.sendMessage('kill-thread')
-
-    def OnStartDownloads(self, event):
-        """ Inicia a coleta de dados. """
-
-        self.startBtn.Disable()
-        # self.updateBtn.Disable()
-
-        self.InitWebScraper()
-
-    def OnUpdateFiles(self, event):
-        """ Chamada quando o botão de atualizar os arquivos é pressionado. 
-        Se os dados históricos já estiverem baixados e concatenados, atualiza-os. """
-
-        self.startBtn.Disable()
-        # self.updateBtn.Disable()
-
-        temp_path = f"{tempfile.gettempdir()}/4watt"
-        dp = data_processing.DataProcessing(temp_path, self.appData)
-        dp.update_estacoes()
+        master.Add(leftSizer, proportion=1, flag=wx.EXPAND)
+        master.Add(rightSizer, proportion=1, flag=wx.EXPAND)
+        self.panel.SetSizerAndFit(master)
 
     def OnQuit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''
