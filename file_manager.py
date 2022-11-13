@@ -1,4 +1,5 @@
 import os
+from io import TextIOWrapper
 from pathlib import Path
 import shutil
 import zipfile
@@ -76,6 +77,38 @@ class Files:
         f_list = zip.namelist()
         csv_list = [csv for csv in f_list if csv.endswith('.CSV')]
 
-        for csv in csv_list:
-            csv_obj = zip.open(csv)
-            print(csv_obj.readlines()[:8], '\n')
+        stations = {}
+
+        for csv_zip in csv_list:
+            text = zip.open(csv_zip).readlines()
+
+            d = {}
+            for line in text[:8]:
+                key, value = str(line, 'latin-1').split(';')
+                key = key.strip()
+                value = value.strip()
+
+                d[key] = value
+
+            d['Name'] = f"{d['CODIGO (WMO):']} {d['ESTACAO:']}"
+            stations[d['CODIGO (WMO):']] = d
+
+        self.app_data['stations'] = stations
+        
+        # Agora, vamos colocar as estações junto com seus respectivos UF.
+        combo_box = {}
+        for value in stations.values():
+            uf = value['UF:']
+            
+            if uf not in combo_box:
+                combo_box[uf] = []
+                combo_box[uf].append(value['Name'])
+
+            else:
+                combo_box[uf].append(value['Name'])
+
+        self.app_data['uf_station'] = combo_box
+        
+        pub.sendMessage('update-combos')
+        pub.sendMessage('save-file')
+            

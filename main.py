@@ -36,6 +36,7 @@ class Main(wx.Frame):
         """ Faz os `pub.subscribe` necessários para essa classe. """
 
         pub.subscribe(self.save_file, 'save-file')
+        pub.subscribe(self.update_combos, 'update-combos')
         pub.subscribe(self.add_log, 'log')
         pub.subscribe(self.set_processing_being_done, 'set-processing-being-done')
 
@@ -81,13 +82,13 @@ class Main(wx.Frame):
 
         # Campo de seleção de estado.
         stateSizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.state = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY)
+        self.state = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY | wx.CB_SORT)
         stateSizer.Add(wx.StaticText(panel, -1, 'Estado', size=(60, 23)), flag=wx.TOP, border=3)
         stateSizer.Add(self.state, proportion=1, flag=wx.EXPAND)
         
         # Campo de seleção de cidade.
         citySizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.city = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY)
+        self.city = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY | wx.CB_SORT)
         citySizer.Add(wx.StaticText(panel, -1, 'Cidade', size=(60, 23)), flag=wx.TOP, border=3)
         citySizer.Add(self.city, proportion=1, flag=wx.EXPAND)
 
@@ -109,7 +110,7 @@ class Main(wx.Frame):
 
         # Criando o sizer de informações da estação.
         detailsSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Detalhes da estação')
-        self.detailsList = wx.ListCtrl(panel, -1, size=(220, 160), style=wx.LC_REPORT)
+        self.detailsList = wx.ListCtrl(panel, -1, size=(220, 180), style=wx.LC_REPORT)
         self.detailsList.InsertColumn(0, 'Parâmetro', wx.LIST_FORMAT_CENTRE)
         self.detailsList.InsertColumn(1, 'Valor', wx.LIST_FORMAT_CENTRE)
 
@@ -122,7 +123,8 @@ class Main(wx.Frame):
         self.detailsList.InsertItem(3, 'Código')
         self.detailsList.InsertItem(4, 'Latitude')
         self.detailsList.InsertItem(5, 'Longitude')
-        self.detailsList.InsertItem(6, 'Fundação')
+        self.detailsList.InsertItem(6, 'Altitude')
+        self.detailsList.InsertItem(7, 'Fundação')
         detailsSizer.Add(self.detailsList, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando a caixa de texto do logger.
@@ -193,7 +195,8 @@ class Main(wx.Frame):
             self.app_data = {
                 'keep_scrolling': True,
                 'last_zip_date': '',    # Data dos últimos dados no último zip.
-                'estacoes': {}
+                'estacoes': {},
+                'uf_station': {}
             }
             
             with open(path, 'w', encoding='utf-8') as f:
@@ -205,6 +208,14 @@ class Main(wx.Frame):
         path = os.path.join(self.appdata_folder, '.4waTT.json')
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(self.app_data, f, indent=4)
+
+    def update_combos(self):
+        """ Atualiza os wx.ComboBox de Estados e Cidades usando `self.app_data['uf_station']`. """
+
+        self.state.Clear()
+
+        for key in self.app_data['uf_station'].keys():
+            self.state.Append(key)
 
     def on_timer(self, event):
         """ Chamada a cada segundo. Chama `pub.sendMessage('ping-timer')`. """
