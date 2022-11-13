@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from pubsub import pub
 
+import data_processing
 import web_scraper
 import file_manager
 
@@ -14,6 +15,7 @@ class Main(wx.Frame):
 
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.appdata_folder = Path.home()
+        self.is_processing_being_done = False
         
         self.app_data = {}
         self.load_file()
@@ -35,11 +37,15 @@ class Main(wx.Frame):
 
         pub.subscribe(self.save_file, 'save-file')
         pub.subscribe(self.add_log, 'log')
+        pub.subscribe(self.set_processing_being_done, 'set-processing-being-done')
 
         # wx.Gauge e wx.StaticTex de progresso.
+        pub.subscribe(self.on_clean_progress, 'clean-progress')
         pub.subscribe(self.update_current_gauge, 'update-current-gauge')
+        pub.subscribe(self.update_overall_gauge, 'update-overall-gauge')
         pub.subscribe(self.update_current_gauge_range, 'update-current-gauge-range')
         pub.subscribe(self.update_file_text, 'update-file-text')
+        pub.subscribe(self.update_overall_text, 'update-overall-text')
         pub.subscribe(self.update_size_text, 'update-size-text')
         pub.subscribe(self.update_speed_text, 'update-speed-text')
     
@@ -159,16 +165,16 @@ class Main(wx.Frame):
 
         menu = wx.MenuBar()
         file = wx.Menu()
-        actions = wx.Menu()
+        update = wx.Menu()
         about = wx.Menu()
 
         menu.Append(file, 'Arquivo')
-        menu.Append(actions, 'Fazer')
+        menu.Append(update, 'Atualizar')
         menu.Append(about, 'Sobre')
 
-        update_all = actions.Append(-1, 'Atualizar tudo', 'Concatena e atualiza todo os arquivos.')
+        reset = update.Append(-1, 'Reconstruir a base de dados', 'Apaga toda a base de dados e a re-constrói.')
 
-        self.Bind(wx.EVT_MENU, self.on_update_all, update_all)
+        self.Bind(wx.EVT_MENU, self.on_reset, reset)
 
         self.SetMenuBar(menu)
 
@@ -205,11 +211,16 @@ class Main(wx.Frame):
 
         pub.sendMessage('ping-timer')
 
-    def on_update_all(self, event):
-        """ Faz uma atualização geral nos arquivos cadastrados. Esta função poderá
-        baixar os arquivos históricos, concatená-los e atualizá-los. """
+    def on_reset(self, event):
+        """ Apaga todos os arquivos do programa e reconstrói a base de dados. """
 
-        scrapper = web_scraper.Scraper(self, self.app_data)
+        self.is_processing_being_done = True
+        # file_manager.Files().clean_all(False)
+        # file_manager.Files().check_folders()
+
+        data = data_processing.DataProcessing(self.app_data).concat_dados_historicos
+
+        web_scraper.Scraper(self, self.app_data, [data])
 
     def add_log(self, text: str, isError: bool = False):
         """ Adiciona `text` ao log. `isError` define a cor do texto. """
@@ -239,7 +250,12 @@ class Main(wx.Frame):
     def update_current_gauge(self, value: int):
         """ Atualuza o valor de `self.current_gauge`. """
 
-        self.current_gauge.SetValue(value)
+        self.current_gauge.SetValue(value)    
+
+    def update_overall_gauge(self, value: int):
+        """ Atualuza o valor de `self.overall_gauge`. """
+
+        self.overall_gauge.SetValue(value)
 
     def update_current_gauge_range(self, value: int):
         """ Atualuza o range, valor máximo, de `self.current_gauge`. """
@@ -251,6 +267,11 @@ class Main(wx.Frame):
 
         self.file_text.SetLabel(text)
 
+    def update_overall_text(self, text: str):
+        """ Atualuza o valor de `self.overall_text`. """
+
+        self.overall_text.SetLabel(text)
+
     def update_size_text(self, text: str):
         """ Atualuza o valor de `self.size_text`. """
 
@@ -260,6 +281,11 @@ class Main(wx.Frame):
         """ Atualuza o valor de `self.speed_text`. """
 
         self.speed_text.SetLabel(text)
+
+    def set_processing_being_done(self, value: bool):
+        """ Seta o valor de `self.is_processing_being_done`. """
+
+        self.is_processing_being_done = value
 
     def on_quit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''

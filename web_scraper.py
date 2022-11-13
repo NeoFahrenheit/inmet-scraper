@@ -10,10 +10,11 @@ import download_thread
 import file_manager
 
 class Scraper(Thread):
-    def __init__(self, parent, app_data):
+    def __init__(self, parent, app_data, call_after: list):
         Thread.__init__(self)
         self.main_frame = parent
         self.is_downloading = False
+        self.call_after = call_after
 
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
@@ -82,4 +83,17 @@ class Scraper(Thread):
             self.app_data['last_zip_date'] = last_on_zip
             pub.sendMessage('save-file')
 
+        # self.main_frame.on_clean_progress()
+        # self.main_frame.progress_sizer.ShowItems(False)
+        # self.main_frame.info_sizer.Layout()
+
         self.is_downloading = False
+        pub.sendMessage('save-file')
+
+        # Chama as funções que deverão ser chamadas após o download dos dados históricos.
+        # Eu não posso dar .join() neste thread, pois vai bloquear a GUI. Se o usuário quer atualizar tudo,
+        # tenho que dar um jeito de chamar essas funções aqui.
+
+        for f in self.call_after:
+            f()
+        pub.sendMessage('set-processing-being-done', value=False)

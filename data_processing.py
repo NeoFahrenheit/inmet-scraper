@@ -1,12 +1,14 @@
-from genericpath import isfile
 import os
 from wx import CallAfter
 import zipfile
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import timedelta, date
 import requests
 from pubsub import pub
+
+import file_manager
 
 # O nome e a posição das colunas dos dados históricos e das estações são diferentes!
 # Esse dicionário vai nos auxiliar para pegar um determinado dado nas duas tabelas.
@@ -36,13 +38,16 @@ d_dic_2019 = {
 
 
 class DataProcessing:
-    def __init__(self, temp_path, app_data):
-        self.temp_path = temp_path  # Local dos arquivos baixados em /Temp
-        self.appData = app_data
-        self.docsPath = os.path.expanduser('~/Documents/4watt')
+    def __init__(self, app_data):
+        self.app_data = app_data
+        
+        self.home = Path.home()
+        self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
+        self.concat_folder = os.path.join(self.app_folder, 'dados_concatenados')
 
-        if not os.path.isdir(self.docsPath):
-            os.mkdir(self.docsPath)
+        self.stations = {}
+
 
     def replace_comma(self, number: str | float) -> float | str:
         """ Retorna a string `number` com a vírgula substituída por um ponto. """
@@ -91,17 +96,22 @@ class DataProcessing:
         else:
             return number
 
-    def concat_dados_historicos(self, temp_files):
+    def concat_dados_historicos(self):
         ''' Concatena os dados históricos para que todas as estações estejam em 
-        um arquivo só. Usado para dados históricos para o 2019 e posteriores.'''
+        um arquivo só. Usado para dados históricos para o 2019 e posteriores. Também constrói
+        a base de dados das estações. '''
 
         isIt2019 = False
 
-        files = os.listdir(temp_files)
+        files = os.listdir(self.historical_folder)
         zips_size = len(files)
-        CallAfter(pub.sendMessage, topicName='OnUpdateTransferSpeed', text=['', ''])
-        CallAfter(pub.sendMessage, topicName='update-overall-gauge', value=0)
-        CallAfter(pub.sendMessage, topicName='update-overall-gauge-maximum-value', value=zips_size)
+        file_manager.Files(self.app_data).get_stations_list(files[-1])
+        return
+
+        pub.sendMessage('update-size-text', text='')
+        pub.sendMessage('update-speed-text', text='')
+        pub.sendMessage('update-overall-gauge-range', value=zips_size)
+        pub.sendMessage('update-overall-gauge', value=0)
 
         files.sort()
 
@@ -109,26 +119,25 @@ class DataProcessing:
         for file in files:
             # Para cada path de um zip, vamos coletar o path de todos os .csv contidos
             # dentro dele.
-            zip = zipfile.ZipFile(f"{temp_files}/{file}")
+            zip = zipfile.ZipFile(os.path.join(self.historical_folder, file))
             f_list = zip.namelist()
             csv_list = [csv for csv in f_list if csv.endswith('.CSV')]
 
             # Verificamos se o ano é 2019 ou posterior. A formatação dos .csv é diferente.
-            ano = int(zip.filename.split('/')[-1].split('.')[0])
+            ano = int(zip.filename.split('\\')[-1].split('.')[0])
             if ano >= 2019:
                 isIt2019 = True
             
-            CallAfter(pub.sendMessage, topicName='update-page-info', text=f"Processando arquivos do ano de {ano}...")
-
-            CallAfter(pub.sendMessage, topicName='update-current-gauge-maximum-value', value=len(csv_list))
-            CallAfter(pub.sendMessage, topicName='update-current-gauge', value=0)
+            pub.sendMessage('update-overall-text', text=f"Concatenando arquivos históricos do ano {ano}...")
+            pub.sendMessage('update-current-gauge-range', value=len(csv_list))
+            pub.sendMessage('update-current-gauge', value=0)
 
             current_csv_count = 0
             for csv in csv_list:
                 # Capturamos apenas o nome da estação.
                 estacao = csv.split('_')[3]
 
-                CallAfter(pub.sendMessage, topicName='update-filename', text=f"Processando arquivo da estação {estacao}...")
+                pub.sendMessage('update-file-text', text=f"Processando estação {estacao}...")
                 if isIt2019:
                     dic = d_dic_2019
                 else:
@@ -157,7 +166,7 @@ class DataProcessing:
                     df['Hora'] = df['Hora'].apply(lambda x: self.convert_to_hour_2019(x))
 
                 # Se um .csv já está na pasta de downloads, vamos concatená-lo.
-                file = os.path.join(self.docsPath, f"{estacao}.csv")
+                file = os.path.join(self.concat_folder, f"{estacao}.csv")
                 if os.path.isfile(file):
                     on_disk = pd.read_csv(file, dtype={'Chuva': object, 'Pressao': object, 
                     'Radiacao': object, 'Temperatura': object, 'Umidade': object})
@@ -171,34 +180,33 @@ class DataProcessing:
                     df.to_csv(file, index=False)
 
                 current_csv_count += 1
-                CallAfter(pub.sendMessage, topicName='update-current-gauge', value=current_csv_count)
+                pub.sendMessage('update-current-gauge', value=current_csv_count)
 
             zip_count += 1
-            CallAfter(pub.sendMessage, topicName='update-overall-gauge', value=zip_count)
+            pub.sendMessage('update-overall-gauge', value=zip_count)
 
     def update_estacoes(self):
         ''' Esta função só deve ser chamada quando todos os dados históricos já estiverem baixados e concatenados. 
         Acessa o site do INMET pela API e baixa todos os dados faltantes desde a última entrada nos .csv
         salvos na pasta documenttos até o dia anterior. '''
-
-        path = self.docsPath
         
-        CallAfter(pub.sendMessage, topicName='OnUpdateTransferSpeed', text=['', ''])
-        CallAfter(pub.sendMessage, topicName='update-overall-gauge', value=0)
-        CallAfter(pub.sendMessage, topicName='update-current-gauge', value=0)
+        pub.sendMessage('OnUpdateTransferSpeed', text=['', ''])
+        pub.sendMessage('update-overall-gauge', value=0)
+        pub.sendMessage('update-current-gauge', value=0)
 
-        CallAfter(pub.sendMessage, topicName='update-filename', text='')
-        CallAfter(pub.sendMessage, topicName='update-page-info', text="Atualizando os arquivos com dados mais recentes...")
+        pub.sendMessage('update-filename', text='')
+        pub.sendMessage('update-page-info', text="Atualizando os arquivos com dados mais recentes...")
 
         csv_count = 0
-        number_of_csvs = len(os.listdir(path))
-        CallAfter(pub.sendMessage, topicName='update-current-gauge-maximum-value', value=number_of_csvs)
 
-        for csv in os.listdir(path):
+        number_of_csvs = len(os.listdir(self.concat_folder))
+        pub.sendMessage('update-current-gauge-maximum-value', value=number_of_csvs)
+
+        for csv in os.listdir(self.concat_folder):
             estacao = csv
-            CallAfter(pub.sendMessage, topicName='update-filename', text=f"Atualizando estação {estacao.split('.')[0]}...")
+            pub.sendMessage('update-filename', text=f"Atualizando estação {estacao.split('.')[0]}...")
 
-            csv_path = os.path.join(path, csv)
+            csv_path = os.path.join(self.concat_folder, csv)
             df = pd.read_csv(csv_path, delimiter=',', dtype={'Chuva': object, 'Pressao': object, 
             'Radiacao': object, 'Temperatura': object, 'Umidade': object})
 
@@ -301,4 +309,8 @@ class DataProcessing:
 
             df.to_csv('/home/leandro/Desktop/test.csv', index=False)
 
-    
+    def _populate_stations(self, zip):
+        """ Forma a base de dados das estações. É usada para a pesquisa. """
+
+        f_list = zip.namelist()
+        csv_list = [csv for csv in f_list if csv.endswith('.CSV')]

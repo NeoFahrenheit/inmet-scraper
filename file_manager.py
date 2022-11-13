@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 import shutil
+import zipfile
+import csv
+from pubsub import pub
 
 class Files:
     def __init__(self, app_data):
@@ -12,12 +15,13 @@ class Files:
 
         self.check_folders()
 
-    def clean_all(self):
+    def clean_all(self, delete_config_file: bool = True):
         """ Deleta todas as pastas e arquivos do programa, assim como
         o arquivo de configuração. """
 
         shutil.rmtree(self.app_folder)
-        os.remove(os.path.join(self.home, '.4waTT'))
+        if delete_config_file:
+            os.remove(os.path.join(self.home, '.4waTT'))
 
     def check_folders(self):
         """ Verifica se todas as pastas estão presentes.
@@ -39,9 +43,9 @@ class Files:
     def check_historial_data(self, zips: list) -> bool:
         """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 
         contém os dados até determinado mês. Esta função identifica a data deste arquivo parcial 
-        para detectar se ela já contém os dados do ano completos ou foi atualizada.
+        para detectar se ela já contém os dados do ano completo ou foi atualizada.
         `Caso sim`, esta pasta é deletada para ser baixada novamente, não aqui, e esta função 
-        retorna uma string com a última data parcial encontrada. Retorna uma string vazia, caso contrário. """
+        retorna uma string com a última data parcial encontrada. Retorna uma string vazia, `caso contrário`. """
 
         if self.app_data['last_zip_date'] == '':
             return ''
@@ -62,3 +66,16 @@ class Files:
                     return date
 
         return ''
+
+    
+    def get_stations_list(self, zip):
+        """ Recebe um zip dos dados históricos, de preferência do último ano, para formar a base de dados 
+        das estaçõs que será usada para pesquisa. """
+
+        zip = zipfile.ZipFile(os.path.join(self.historical_folder, zip))
+        f_list = zip.namelist()
+        csv_list = [csv for csv in f_list if csv.endswith('.CSV')]
+
+        for csv in csv_list:
+            csv_obj = zip.open(csv)
+            print(csv_obj.readlines()[:8], '\n')

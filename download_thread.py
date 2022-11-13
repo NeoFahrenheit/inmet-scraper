@@ -57,7 +57,7 @@ class DownloadThread(Thread):
 
                             if perc_temp != value:
                                 perc_temp = value
-                                CallAfter(pub.sendMessage, topicName='update-current-gauge', value=perc_temp)
+                                pub.sendMessage(topicName='update-current-gauge', value=perc_temp)
 
                         else:
                             isGoingOk = False
@@ -65,7 +65,7 @@ class DownloadThread(Thread):
             except:
                 isGoingOk = False
 
-        CallAfter(pub.sendMessage, topicName='update-current-gauge', value=100)
+        pub.sendMessage(topicName='update-current-gauge', value=100)
 
         # Se ocorrer algum problema no download, removemos o arquivo.
         # Só queremos ter arquivos totalmente baixados.
