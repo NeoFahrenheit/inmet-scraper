@@ -3,22 +3,25 @@ import wx
 import wx.richtext as rt
 import json
 from pathlib import Path
-import web_scraper
 from pubsub import pub
-import data_processing
+
+import web_scraper
+import file_manager
 
 class Main(wx.Frame):
     def __init__(self, parent):
         super().__init__(parent, style=wx.DEFAULT_FRAME_STYLE)
 
-        self.app_data = {}
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.appdata_folder = Path.home()
+        
+        self.app_data = {}
+        self.load_file()
+        self.file_manager = file_manager.Files(self.app_data)
 
         self.SetTitle('DNC 4waTT')
         self.SetSize(1000, 680)
         self.init_ui()
-        self.load_file()
         
         self.make_subscriptions()
         self.CenterOnScreen()
@@ -31,6 +34,14 @@ class Main(wx.Frame):
         """ Faz os `pub.subscribe` necessários para essa classe. """
 
         pub.subscribe(self.save_file, 'save-file')
+        pub.subscribe(self.add_log, 'log')
+
+        # wx.Gauge e wx.StaticTex de progresso.
+        pub.subscribe(self.update_current_gauge, 'update-current-gauge')
+        pub.subscribe(self.update_current_gauge_range, 'update-current-gauge-range')
+        pub.subscribe(self.update_file_text, 'update-file-text')
+        pub.subscribe(self.update_size_text, 'update-size-text')
+        pub.subscribe(self.update_speed_text, 'update-speed-text')
     
     def init_ui(self):
         """ Inicializa a UI e seus widgets. """
@@ -40,12 +51,13 @@ class Main(wx.Frame):
         master_sizer = wx.BoxSizer(wx.HORIZONTAL)
         station_ctrl_sizer = wx.BoxSizer(wx.VERTICAL)
         station_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.info_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        self.panel = wx.Panel(self)
+        panel = wx.Panel(self)
         self.status_bar = self.CreateStatusBar()
 
         # Criando o wx.ListCtrl.
-        self.estacaoList = wx.ListCtrl(self.panel, -1, style=wx.LC_REPORT)
+        self.estacaoList = wx.ListCtrl(panel, -1, style=wx.LC_REPORT)
         self.estacaoList.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
         self.estacaoList.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
         self.estacaoList.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
@@ -59,39 +71,39 @@ class Main(wx.Frame):
         self.estacaoList.SetItem(0, 2, 'Não')
 
         # Criando o sizer de seleção / pesquisa.
-        comboSizer = wx.StaticBoxSizer(wx.VERTICAL, self.panel, 'Adicionar estações')
+        comboSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Adicionar estações')
 
         # Campo de seleção de estado.
         stateSizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.state = wx.ComboBox(self.panel, -1, 'Acre', choices=[], style=wx.CB_READONLY)
-        stateSizer.Add(wx.StaticText(self.panel, -1, 'Estado', size=(60, 23)), flag=wx.TOP, border=3)
+        self.state = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY)
+        stateSizer.Add(wx.StaticText(panel, -1, 'Estado', size=(60, 23)), flag=wx.TOP, border=3)
         stateSizer.Add(self.state, proportion=1, flag=wx.EXPAND)
         
         # Campo de seleção de cidade.
         citySizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.city = wx.ComboBox(self.panel, -1, 'Acre', choices=[], style=wx.CB_READONLY)
-        citySizer.Add(wx.StaticText(self.panel, -1, 'Cidade', size=(60, 23)), flag=wx.TOP, border=3)
+        self.city = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY)
+        citySizer.Add(wx.StaticText(panel, -1, 'Cidade', size=(60, 23)), flag=wx.TOP, border=3)
         citySizer.Add(self.city, proportion=1, flag=wx.EXPAND)
 
         # Botão de adicionar.
-        addBtn = wx.Button(self.panel, -1, 'Adicionar')
+        addBtn = wx.Button(panel, -1, 'Adicionar')
 
         comboSizer.Add(stateSizer, flag=wx.ALL | wx.EXPAND, border=5)
         comboSizer.Add(citySizer, flag=wx.ALL | wx.EXPAND, border=5)
         comboSizer.Add(addBtn, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando o sizer de procurar por estações.
-        searchSizer = wx.StaticBoxSizer(wx.VERTICAL, self.panel, 'Procurar por estação')
+        searchSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Procurar por estação')
 
-        searchCtrl = wx.SearchCtrl(self.panel, -1)
-        self.searchBox = wx.ListBox(self.panel, -1)
+        searchCtrl = wx.SearchCtrl(panel, -1)
+        self.searchBox = wx.ListBox(panel, -1)
 
         searchSizer.Add(searchCtrl, flag=wx.ALL | wx.EXPAND, border=5)
         searchSizer.Add(self.searchBox, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando o sizer de informações da estação.
-        detailsSizer = wx.StaticBoxSizer(wx.VERTICAL, self.panel, 'Detalhes da estação')
-        self.detailsList = wx.ListCtrl(self.panel, -1, size=(220, 160), style=wx.LC_REPORT)
+        detailsSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Detalhes da estação')
+        self.detailsList = wx.ListCtrl(panel, -1, size=(220, 160), style=wx.LC_REPORT)
         self.detailsList.InsertColumn(0, 'Parâmetro', wx.LIST_FORMAT_CENTRE)
         self.detailsList.InsertColumn(1, 'Valor', wx.LIST_FORMAT_CENTRE)
 
@@ -108,7 +120,26 @@ class Main(wx.Frame):
         detailsSizer.Add(self.detailsList, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando a caixa de texto do logger.
-        self.rt = rt.RichTextCtrl(self.panel, -1, style=rt.RE_READONLY)
+        self.rt = rt.RichTextCtrl(panel, -1, style=rt.RE_READONLY)
+        self.info_sizer.Add(self.rt, proportion=1, flag=wx.EXPAND | wx.TOP, border=5)
+
+        # Criando o sizer de progresso de downloads / processamento.
+        self.progress_sizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Progresso')
+
+        self.overall_gauge = wx.Gauge(panel, -1)
+        self.current_gauge = wx.Gauge(panel, -1)
+        self.overall_text = wx.StaticText(panel, -1, 'Overall Info')
+        self.file_text = wx.StaticText(panel, -1, 'File information')
+        self.size_text = wx.StaticText(panel, -1, 'Size')
+        self.speed_text = wx.StaticText(panel, -1, 'Speed')
+
+        self.progress_sizer.Add(self.overall_text, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
+        self.progress_sizer.Add(self.overall_gauge, flag=wx.EXPAND | wx.ALL, border=10)
+        self.progress_sizer.Add(self.current_gauge, flag=wx.EXPAND | wx.ALL, border=10)
+        self.progress_sizer.Add(self.file_text, flag=wx.EXPAND | wx.LEFT | wx.BOTTOM, border=10)
+        self.progress_sizer.Add(self.size_text, flag=wx.EXPAND | wx.LEFT | wx.BOTTOM, border=10)
+        self.progress_sizer.Add(self.speed_text, flag=wx.EXPAND | wx.LEFT, border=10)
+        self.info_sizer.Add(self.progress_sizer, flag=wx.EXPAND | wx.TOP, border=5)
 
         # Adionando os sizers ao master.
         station_ctrl_sizer.Add(self.estacaoList, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
@@ -119,9 +150,9 @@ class Main(wx.Frame):
 
         master_sizer.Add(station_ctrl_sizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
         master_sizer.Add(station_sizer, proportion=1, flag=wx.ALL, border=5)
-        master_sizer.Add(self.rt, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
+        master_sizer.Add(self.info_sizer, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
 
-        self.panel.SetSizerAndFit(master_sizer)
+        panel.SetSizerAndFit(master_sizer)
 
     def init_menu(self):
         """ Inicializa o menu. """
@@ -134,6 +165,10 @@ class Main(wx.Frame):
         menu.Append(file, 'Arquivo')
         menu.Append(actions, 'Fazer')
         menu.Append(about, 'Sobre')
+
+        update_all = actions.Append(-1, 'Atualizar tudo', 'Concatena e atualiza todo os arquivos.')
+
+        self.Bind(wx.EVT_MENU, self.on_update_all, update_all)
 
         self.SetMenuBar(menu)
 
@@ -150,6 +185,7 @@ class Main(wx.Frame):
                 self.app_data = json.loads(text)
         else:
             self.app_data = {
+                'keep_scrolling': True,
                 'last_zip_date': '',    # Data dos últimos dados no último zip.
                 'estacoes': {}
             }
@@ -162,12 +198,68 @@ class Main(wx.Frame):
 
         path = os.path.join(self.appdata_folder, '.4waTT.json')
         with open(path, 'w', encoding='utf-8') as f:
-                json.dump(self.app_data, f, indent=4)
+            json.dump(self.app_data, f, indent=4)
 
     def on_timer(self, event):
         """ Chamada a cada segundo. Chama `pub.sendMessage('ping-timer')`. """
 
         pub.sendMessage('ping-timer')
+
+    def on_update_all(self, event):
+        """ Faz uma atualização geral nos arquivos cadastrados. Esta função poderá
+        baixar os arquivos históricos, concatená-los e atualizá-los. """
+
+        scrapper = web_scraper.Scraper(self, self.app_data)
+
+    def add_log(self, text: str, isError: bool = False):
+        """ Adiciona `text` ao log. `isError` define a cor do texto. """
+
+        if isError:
+            self.rt.BeginTextColour(wx.RED)
+        else:
+            self.rt.BeginTextColour(wx.BLACK)
+
+        self.rt.WriteText(text)
+        self.rt.Newline()
+        self.rt.EndTextColour()
+
+        if self.app_data['keep_scrolling']:
+            self.rt.ShowPosition(self.rt.GetLastPosition())
+    
+    def on_clean_progress(self):
+        """ Limpa e reseta todos os campos de progresso de download. """
+
+        self.overall_gauge.SetValue(0)
+        self.current_gauge.SetValue(0)
+        self.overall_text.SetLabel('')
+        self.file_text.SetLabel('')
+        self.size_text.SetLabel('')
+        self.speed_text.SetLabel('')
+
+    def update_current_gauge(self, value: int):
+        """ Atualuza o valor de `self.current_gauge`. """
+
+        self.current_gauge.SetValue(value)
+
+    def update_current_gauge_range(self, value: int):
+        """ Atualuza o range, valor máximo, de `self.current_gauge`. """
+
+        self.current_gauge.SetRange(value)
+
+    def update_file_text(self, text: str):
+        """ Atualuza o valor de `self.file_text`. """
+
+        self.file_text.SetLabel(text)
+
+    def update_size_text(self, text: str):
+        """ Atualuza o valor de `self.size_text`. """
+
+        self.size_text.SetLabel(text)
+
+    def update_speed_text(self, text: str):
+        """ Atualuza o valor de `self.speed_text`. """
+
+        self.speed_text.SetLabel(text)
 
     def on_quit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''
@@ -182,6 +274,7 @@ class Main(wx.Frame):
         else:
             self.OnEndThreads()
             self.Destroy()
+
 
 
 app = wx.App()

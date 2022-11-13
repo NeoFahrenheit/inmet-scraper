@@ -1,21 +1,36 @@
 import os
+from wx import CallAfter
+from threading import Thread
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 from pubsub import pub
 
-import downloader
+import download_thread
+import file_manager
 
-class Scraper():
-    def __init__(self, app_data):
+class Scraper(Thread):
+    def __init__(self, parent, app_data):
+        Thread.__init__(self)
+        self.main_frame = parent
+        self.is_downloading = False
+
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
         self.app_data = app_data
+
+        self.file_manager = file_manager.Files(self.app_data)
+        self.start()
+
+    def run(self):
+        self.download_dados_inmet()
 
     def download_dados_inmet(self):
         ''' Faz o download de todos os .zip da página `https://portal.inmet.gov.br/dadoshistoricos`. 
         Não baixa arquivos já existentes. '''
 
+        self.is_downloading = True
+        
         page_url = 'https://portal.inmet.gov.br/dadoshistoricos'
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'}
         try:
@@ -25,17 +40,41 @@ class Scraper():
 
         soup = BeautifulSoup(html_page.content, 'html.parser')        
         zips = soup.find_all('article', {'class': 'post-preview'})
-        last_on_zip = self.check_partial_zip(zips)
+        last_on_zip = self.file_manager.check_historial_data(zips)
 
+        # Comunica o frame principal sobre as características deste download.
+        self.main_frame.on_clean_progress()
+        self.main_frame.progress_sizer.ShowItems(True)
+        self.main_frame.info_sizer.Layout()
+        self.main_frame.overall_gauge.SetRange(len(zips))
+        self.main_frame.overall_text.SetLabel('Baixando dados históricos...')
+
+        zip_count = 0
         for zip in zips:
             url = zip.a['href']
             filename = os.path.basename(url)
             path = os.path.join(self.historical_folder, filename)
+            self.main_frame.file_text.SetLabel(filename)
 
             # Se o arquivo não existe, vamos baixá-lo.
             if not os.path.isfile(path):
-                dl_thread = downloader.DownloadThread(self, path, url)
-                dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
+                self.main_frame.current_gauge.SetValue(0)
+
+                try:
+                    dl_thread = download_thread.DownloadThread(path, url)
+                    dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
+                    CallAfter(pub.sendMessage, topicName='log', text=f"{filename} baixado com sucesso.")
+                except:
+                    if os.path.isfile(path):
+                        os.remove(path)
+                    
+                    CallAfter(pub.sendMessage, topicName='log', 
+                    text='Erro ao baixar arquivos históricos.', 
+                    isError=True)
+                    break
+
+            zip_count += 1
+            self.main_frame.overall_gauge.SetValue(zip_count)
 
         # Apenas no final, quando tivermos certeza que todos os arquivos foram baixados,
         # é seguro atualizar 'last_zip_date' no arquivo, se necessário.
@@ -43,29 +82,4 @@ class Scraper():
             self.app_data['last_zip_date'] = last_on_zip
             pub.sendMessage('save-file')
 
-    def check_partial_zip(self, zips: list) -> bool:
-        """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 
-        contém os dados até determinado mês. Esta função identifica a data deste arquivo parcial 
-        para detectar se ela já contém os dados do ano completos ou foi atualizada.
-        `Caso sim`, esta pasta é deletada para ser baixada novamente, não aqui, e esta função 
-        retorna uma string com a última data parcial encontrada. Retorna uma string vazia, caso contrário. """
-
-        if self.app_data['last_zip_date'] == '':
-            return ''
-
-        # Qual é o ano do zip com data parcial?
-        for zip in zips:
-            text = zip.a.text.split('(')[1]
-            text = text[:-1]    # Retirando o último parêntese.
-
-            if text != 'AUTOMÁTICA':
-                # Este text, aqui, tá no formato 'ATÉ dd-mm-yyyy'
-                date = text.split('ATÉ ')[1]
-
-                # As datas estão diferentes?
-                if self.app_data['last_zip_date'] != date:
-                    year = self.app_data['last_zip_date'].split('-')[2]
-                    os.remove(os.path.join(self.historical_folder, f"{year}.zip"))
-                    return date
-
-        return ''
+        self.is_downloading = False
