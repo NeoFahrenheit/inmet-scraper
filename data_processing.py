@@ -96,7 +96,7 @@ class DataProcessing:
         else:
             return number
 
-    def concat_dados_historicos(self):
+    def concat_dados_historicos(self, stations: list, isAll: bool = False):
         ''' Concatena os dados históricos para que todas as estações estejam em 
         um arquivo só. Usado para dados históricos para o 2019 e posteriores. Também constrói
         a base de dados das estações. '''
@@ -105,8 +105,6 @@ class DataProcessing:
 
         files = os.listdir(self.historical_folder)
         zips_size = len(files)
-        file_manager.Files(self.app_data).get_stations_list(files[-1])
-        return
 
         pub.sendMessage('update-size-text', text='')
         pub.sendMessage('update-speed-text', text='')

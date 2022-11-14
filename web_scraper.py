@@ -44,7 +44,7 @@ class Scraper(Thread):
         last_on_zip = self.file_manager.check_historial_data(zips)
 
         # Comunica o frame principal sobre as características deste download.
-        self.main_frame.on_clean_progress()
+        self.main_frame.on_clear_progress()
         self.main_frame.progress_sizer.ShowItems(True)
         self.main_frame.info_sizer.Layout()
         self.main_frame.overall_gauge.SetRange(len(zips))
@@ -94,6 +94,5 @@ class Scraper(Thread):
         # Eu não posso dar .join() neste thread, pois vai bloquear a GUI. Se o usuário quer atualizar tudo,
         # tenho que dar um jeito de chamar essas funções aqui.
 
-        for f in self.call_after:
-            f()
+        self.call_after()
         pub.sendMessage('set-processing-being-done', value=False)

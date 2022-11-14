@@ -22,10 +22,12 @@ class Main(wx.Frame):
         self.file_manager = file_manager.Files(self.app_data)
 
         self.SetTitle('DNC 4waTT')
-        self.SetSize(1000, 680)
+        self.SetSize(1100, 680)
         self.init_ui()
+        self.update_combos()
         
         self.make_subscriptions()
+
         self.CenterOnScreen()
 
         self.timer = wx.Timer(self)
@@ -41,7 +43,7 @@ class Main(wx.Frame):
         pub.subscribe(self.set_processing_being_done, 'set-processing-being-done')
 
         # wx.Gauge e wx.StaticTex de progresso.
-        pub.subscribe(self.on_clean_progress, 'clean-progress')
+        pub.subscribe(self.on_clear_progress, 'clean-progress')
         pub.subscribe(self.update_current_gauge, 'update-current-gauge')
         pub.subscribe(self.update_overall_gauge, 'update-overall-gauge')
         pub.subscribe(self.update_current_gauge_range, 'update-current-gauge-range')
@@ -64,18 +66,14 @@ class Main(wx.Frame):
         self.status_bar = self.CreateStatusBar()
 
         # Criando o wx.ListCtrl.
-        self.estacaoList = wx.ListCtrl(panel, -1, style=wx.LC_REPORT)
-        self.estacaoList.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
-        self.estacaoList.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
-        self.estacaoList.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
+        self.stationsCtrl = wx.ListCtrl(panel, -1, style=wx.LC_REPORT)
+        self.stationsCtrl.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
+        self.stationsCtrl.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
+        self.stationsCtrl.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
 
-        self.estacaoList.SetColumnWidth(0, 120)
-        self.estacaoList.SetColumnWidth(1, 120)
-        self.estacaoList.SetColumnWidth(2, 120)
-
-        self.estacaoList.InsertItem(0, 'A807')
-        self.estacaoList.SetItem(0, 1, 'Não')
-        self.estacaoList.SetItem(0, 2, 'Não')
+        self.stationsCtrl.SetColumnWidth(0, 120)
+        self.stationsCtrl.SetColumnWidth(1, 120)
+        self.stationsCtrl.SetColumnWidth(2, 120)
 
         # Criando o sizer de seleção / pesquisa.
         comboSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Adicionar estações')
@@ -83,17 +81,20 @@ class Main(wx.Frame):
         # Campo de seleção de estado.
         stateSizer = wx.BoxSizer(wx.HORIZONTAL)
         self.state = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY | wx.CB_SORT)
+        self.state.Bind(wx.EVT_COMBOBOX, self._on_state)
         stateSizer.Add(wx.StaticText(panel, -1, 'Estado', size=(60, 23)), flag=wx.TOP, border=3)
         stateSizer.Add(self.state, proportion=1, flag=wx.EXPAND)
         
         # Campo de seleção de cidade.
         citySizer = wx.BoxSizer(wx.HORIZONTAL)
         self.city = wx.ComboBox(panel, -1, 'Acre', choices=[], style=wx.CB_READONLY | wx.CB_SORT)
+        self.city.Bind(wx.EVT_COMBOBOX, self._on_city)
         citySizer.Add(wx.StaticText(panel, -1, 'Cidade', size=(60, 23)), flag=wx.TOP, border=3)
         citySizer.Add(self.city, proportion=1, flag=wx.EXPAND)
 
         # Botão de adicionar.
         addBtn = wx.Button(panel, -1, 'Adicionar')
+        self.Bind(wx.EVT_BUTTON, self._on_add_station)
 
         comboSizer.Add(stateSizer, flag=wx.ALL | wx.EXPAND, border=5)
         comboSizer.Add(citySizer, flag=wx.ALL | wx.EXPAND, border=5)
@@ -103,19 +104,22 @@ class Main(wx.Frame):
         searchSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Procurar por estação')
 
         searchCtrl = wx.SearchCtrl(panel, -1)
+        self.Bind(wx.EVT_SEARCH, self._on_search)
         self.searchBox = wx.ListBox(panel, -1)
+        self.Bind(wx.EVT_LISTBOX, self._on_list_box)
+        self.Bind(wx.EVT_LISTBOX_DCLICK, self._on_dclicked_list_box)
 
         searchSizer.Add(searchCtrl, flag=wx.ALL | wx.EXPAND, border=5)
         searchSizer.Add(self.searchBox, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando o sizer de informações da estação.
         detailsSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Detalhes da estação')
-        self.detailsList = wx.ListCtrl(panel, -1, size=(220, 180), style=wx.LC_REPORT)
+        self.detailsList = wx.ListCtrl(panel, -1, size=(220, 200), style=wx.LC_REPORT)
         self.detailsList.InsertColumn(0, 'Parâmetro', wx.LIST_FORMAT_CENTRE)
-        self.detailsList.InsertColumn(1, 'Valor', wx.LIST_FORMAT_CENTRE)
+        self.detailsList.InsertColumn(1, 'Valor', wx.LIST_FORMAT_LEFT)
 
         self.detailsList.SetColumnWidth(0, 100)
-        self.detailsList.SetColumnWidth(1, 120)
+        self.detailsList.SetColumnWidth(1, 250)
 
         self.detailsList.InsertItem(0, 'Região')
         self.detailsList.InsertItem(1, 'UF')
@@ -148,16 +152,17 @@ class Main(wx.Frame):
         self.progress_sizer.Add(self.size_text, flag=wx.EXPAND | wx.LEFT | wx.BOTTOM, border=10)
         self.progress_sizer.Add(self.speed_text, flag=wx.EXPAND | wx.LEFT, border=10)
         self.info_sizer.Add(self.progress_sizer, flag=wx.EXPAND | wx.TOP, border=5)
+        self.progress_sizer.ShowItems(False)
 
         # Adionando os sizers ao master.
-        station_ctrl_sizer.Add(self.estacaoList, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
+        station_ctrl_sizer.Add(self.stationsCtrl, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
         station_sizer.Add(comboSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
         station_sizer.Add(searchSizer, proportion=3, flag=wx.ALL | wx.EXPAND, border=5)
         station_sizer.Add(detailsSizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
         master_sizer.Add(station_ctrl_sizer, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
-        master_sizer.Add(station_sizer, proportion=1, flag=wx.ALL, border=5)
+        master_sizer.Add(station_sizer, proportion=2, flag=wx.ALL, border=5)
         master_sizer.Add(self.info_sizer, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
 
         panel.SetSizerAndFit(master_sizer)
@@ -195,8 +200,8 @@ class Main(wx.Frame):
             self.app_data = {
                 'keep_scrolling': True,
                 'last_zip_date': '',    # Data dos últimos dados no último zip.
-                'estacoes': {},
-                'uf_station': {}
+                'saved': {},
+                'stations': {},
             }
             
             with open(path, 'w', encoding='utf-8') as f:
@@ -210,12 +215,67 @@ class Main(wx.Frame):
             json.dump(self.app_data, f, indent=4)
 
     def update_combos(self):
-        """ Atualiza os wx.ComboBox de Estados e Cidades usando `self.app_data['uf_station']`. """
+        """ Atualiza os wx.ComboBox de Estados e Cidades usando `self.app_data['stations']`. """
+
+        if not self.app_data['stations']:
+            return
 
         self.state.Clear()
+        out_list = []
 
-        for key in self.app_data['uf_station'].keys():
-            self.state.Append(key)
+        for dic in self.app_data['stations'].values():
+            if dic['UF:'] not in out_list:
+                out_list.append(dic['UF:'])
+
+        out_list.sort()
+        for uf in out_list:
+            self.state.Append(uf)
+
+        self.state.SetValue(out_list[0])
+        self._on_state(None)
+
+    def _on_city_selected(self, key: str):
+        """ Atualiza o valor das informações da estação usando a `key`. """
+        
+        dic = self.app_data['stations'][key]
+        self.detailsList.SetItem(0, 1, dic['REGIAO:'])
+        self.detailsList.SetItem(1, 1, dic['UF:'])
+        self.detailsList.SetItem(2, 1, dic['ESTACAO:'])
+        self.detailsList.SetItem(3, 1, dic['CODIGO (WMO):'])
+        self.detailsList.SetItem(4, 1, dic['LATITUDE:'])
+        self.detailsList.SetItem(5, 1, dic['LONGITUDE:'])
+        self.detailsList.SetItem(6, 1, dic['ALTITUDE:'])
+        self.detailsList.SetItem(7, 1, dic['DATA DE FUNDACAO:'])
+
+    def _on_search(self, event):
+        """ Chamada quando o usuário usa o campo de Pesquisasr. """
+
+        if not self.app_data['stations']:
+            return
+
+        self.searchBox.Clear()        
+        text = event.GetString().lower()
+        out_list = []
+
+        for station in self.app_data['stations'].values():
+            if station['name'].lower().find(text) > -1:
+                self.searchBox.Append(station['name'])
+
+    def _on_list_box(self, event):
+        """ Chamada quando o usuário clica em um item na wx.ListBox (resultado da pesquisa). """
+
+        index = self.searchBox.GetSelection()
+        station = self.searchBox.GetString(index)
+        key = station.split()[0]
+
+        self._on_city_selected(key)
+        
+    def _on_dclicked_list_box(self, event):
+        """ Chamada quando o usuário dá clique duplo em um item na wx.ListBox (resultado da pesquisa). """
+
+        index = self.searchBox.GetSelection()
+        station = self.searchBox.GetString(index).split()[0]
+        self.add_stations_ctrl(station)
 
     def on_timer(self, event):
         """ Chamada a cada segundo. Chama `pub.sendMessage('ping-timer')`. """
@@ -225,13 +285,48 @@ class Main(wx.Frame):
     def on_reset(self, event):
         """ Apaga todos os arquivos do programa e reconstrói a base de dados. """
 
-        self.is_processing_being_done = True
-        # file_manager.Files().clean_all(False)
-        # file_manager.Files().check_folders()
+        dlg = wx.MessageDialog(self, 'Você tem certeza que deseja reconstruir a base de dados?',
+        'Reconstruir a base de dados', wx.YES_NO | wx.ICON_WARNING)
+        response = dlg.ShowModal()
 
-        data = data_processing.DataProcessing(self.app_data).concat_dados_historicos
+        if response == wx.ID_YES:
+            self.is_processing_being_done = True
+            self.file_manager.clean_all(False)
+            self.file_manager.check_folders()
+            func = self.file_manager.get_stations_list
 
-        web_scraper.Scraper(self, self.app_data, [data])
+            web_scraper.Scraper(self, self.app_data, func)
+
+    def _on_state(self, event):
+        """ Chamada quando o valor na ComboBox de estado é mudado. """
+
+        UF = self.state.GetValue()
+        self.city.Clear()
+        out_list = []
+
+        for station in self.app_data['stations'].values():
+            if station['UF:'] == UF:
+                out_list.append(station['name'])
+
+        out_list.sort()
+        for name in out_list:
+            self.city.Append(name)
+
+        self.city.SetValue(out_list[0])
+
+    def _on_city(self, event):
+        """ Chamada quando o valor na ComboBox da cidade é mudado. """
+
+        value = self.city.GetValue()
+        key = value.split()[0]
+        self._on_city_selected(key)
+
+
+    def _on_add_station(self, event):
+        """ Chamada quando o usuário clica no botão `Adicionar`. """
+
+        station = self.city.GetValue().split()[0]
+        self.add_stations_ctrl(station)
 
     def add_log(self, text: str, isError: bool = False):
         """ Adiciona `text` ao log. `isError` define a cor do texto. """
@@ -247,8 +342,21 @@ class Main(wx.Frame):
 
         if self.app_data['keep_scrolling']:
             self.rt.ShowPosition(self.rt.GetLastPosition())
-    
-    def on_clean_progress(self):
+
+    def add_stations_ctrl(self, station: str):
+        """ Insere uma estação ao `self.stationsCtrl`. """
+
+        size = self.stationsCtrl.GetItemCount()
+        found = False
+        for i in range(0, size):
+            item = self.stationsCtrl.GetItemText(i)
+            if item == station:
+                found = True
+
+        if not found:
+            self.stationsCtrl.Append([station, "Não", "Não"])
+
+    def on_clear_progress(self):
         """ Limpa e reseta todos os campos de progresso de download. """
 
         self.overall_gauge.SetValue(0)
@@ -294,16 +402,21 @@ class Main(wx.Frame):
         self.speed_text.SetLabel(text)
 
     def set_processing_being_done(self, value: bool):
-        """ Seta o valor de `self.is_processing_being_done`. """
+        """ Seta o valor de `self.is_processing_being_done`. Como o download / processamento 
+        provavelmente já acabou, esconde o sizer do progresso. """
 
         self.is_processing_being_done = value
+
+        self.on_clear_progress()
+        self.progress_sizer.ShowItems(False)
+        self.info_sizer.Layout()
 
     def on_quit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''
 
-        if self.scraper_thread and self.scraper_thread.isActive:
-            dlg = wx.MessageDialog(self, 'Ainda há downloads em andamento. Tem certeza que deseja cancelar e sair?',
-            'Downloads em andamento', wx.ICON_INFORMATION | wx.YES_NO)
+        if self.is_processing_being_done:
+            dlg = wx.MessageDialog(self, 'Ainda há processos em andamento. Tem certeza que deseja cancelar e sair?',
+            'Processos em andamento', wx.ICON_INFORMATION | wx.YES_NO)
             res = dlg.ShowModal()
             if res == wx.ID_YES:
                 self.OnEndThreads()
@@ -311,7 +424,6 @@ class Main(wx.Frame):
         else:
             self.OnEndThreads()
             self.Destroy()
-
 
 
 app = wx.App()

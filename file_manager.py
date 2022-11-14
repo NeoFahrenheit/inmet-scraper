@@ -9,6 +9,7 @@ from pubsub import pub
 class Files:
     def __init__(self, app_data):
         self.app_data = app_data
+
         self.home = Path.home()
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
@@ -67,18 +68,17 @@ class Files:
                     return date
 
         return ''
-
     
-    def get_stations_list(self, zip):
-        """ Recebe um zip dos dados históricos, de preferência do último ano, para formar a base de dados 
-        das estaçõs que será usada para pesquisa. """
+    def get_stations_list(self):
+        """ Usa o último zip dos dados históricos para formar a base de dados 
+        das estações que será usada para pesquisa. """
 
-        zip = zipfile.ZipFile(os.path.join(self.historical_folder, zip))
+        files = os.listdir(self.historical_folder)
+        zip = zipfile.ZipFile(os.path.join(self.historical_folder, files[-1]))
         f_list = zip.namelist()
         csv_list = [csv for csv in f_list if csv.endswith('.CSV')]
 
         stations = {}
-
         for csv_zip in csv_list:
             text = zip.open(csv_zip).readlines()
 
@@ -90,25 +90,11 @@ class Files:
 
                 d[key] = value
 
-            d['Name'] = f"{d['CODIGO (WMO):']} {d['ESTACAO:']}"
+            d['name'] = f"{d['CODIGO (WMO):']} {d['ESTACAO:']}"
             stations[d['CODIGO (WMO):']] = d
 
         self.app_data['stations'] = stations
         
-        # Agora, vamos colocar as estações junto com seus respectivos UF.
-        combo_box = {}
-        for value in stations.values():
-            uf = value['UF:']
-            
-            if uf not in combo_box:
-                combo_box[uf] = []
-                combo_box[uf].append(value['Name'])
-
-            else:
-                combo_box[uf].append(value['Name'])
-
-        self.app_data['uf_station'] = combo_box
-        
-        pub.sendMessage('update-combos')
         pub.sendMessage('save-file')
+        pub.sendMessage('update-combos')
             
