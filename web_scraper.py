@@ -51,7 +51,7 @@ class Scraper(Thread):
         self.main_frame.overall_text.SetLabel('Baixando dados históricos...')
 
         zip_count = 0
-        for zip in zips:
+        for zip in zips[22:]:
             url = zip.a['href']
             filename = os.path.basename(url)
             path = os.path.join(self.historical_folder, filename)
@@ -64,7 +64,7 @@ class Scraper(Thread):
                 try:
                     dl_thread = download_thread.DownloadThread(path, url)
                     dl_thread.join() # Apenas um download por vez. Tentar evitar block por IP.
-                    CallAfter(pub.sendMessage, topicName='log', text=f"{filename} baixado com sucesso.")
+                    CallAfter(pub.sendMessage, topicName='log', text=f"Arquivo {filename} baixado com sucesso.")
                 except:
                     if os.path.isfile(path):
                         os.remove(path)
@@ -79,9 +79,8 @@ class Scraper(Thread):
 
         # Apenas no final, quando tivermos certeza que todos os arquivos foram baixados,
         # é seguro atualizar 'last_zip_date' no arquivo, se necessário.
-        if last_on_zip != '':
-            self.app_data['last_zip_date'] = last_on_zip
-            pub.sendMessage('save-file')
+        self.app_data['last_zip_date'] = last_on_zip
+        pub.sendMessage('save-file')
 
         # self.main_frame.on_clean_progress()
         # self.main_frame.progress_sizer.ShowItems(False)

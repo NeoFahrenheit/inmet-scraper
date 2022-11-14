@@ -1,9 +1,7 @@
 import os
-from io import TextIOWrapper
 from pathlib import Path
 import shutil
 import zipfile
-import csv
 from pubsub import pub
 
 class Files:
@@ -23,12 +21,15 @@ class Files:
 
         shutil.rmtree(self.app_folder)
         if delete_config_file:
-            os.remove(os.path.join(self.home, '.4waTT'))
+            path = os.path.join(self.home, '.4waTT.json')
+
+            if os.path.isfile(path):
+                self.app_data.clear()
+                os.remove(path)
 
     def check_folders(self):
         """ Verifica se todas as pastas estão presentes.
         As faltantes serão criadas novamente. """
-
 
         if not os.path.isdir(self.app_folder):
             os.mkdir(self.app_folder)
@@ -42,15 +43,14 @@ class Files:
             if not os.path.isdir(self.concat_folder):
                 os.mkdir(self.concat_folder)
 
-    def check_historial_data(self, zips: list) -> bool:
+    def check_historial_data(self, zips: list) -> str:
         """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 
         contém os dados até determinado mês. Esta função identifica a data deste arquivo parcial 
         para detectar se ela já contém os dados do ano completo ou foi atualizada.
-        `Caso sim`, esta pasta é deletada para ser baixada novamente, não aqui, e esta função 
-        retorna uma string com a última data parcial encontrada. Retorna uma string vazia, `caso contrário`. """
+        `Caso sim`, esta pasta é deletada para ser baixada novamente (não baixa aqui), e retorna 
+        uma string com a última data parcial encontrada. """
 
-        if self.app_data['last_zip_date'] == '':
-            return ''
+        # Se self.app_data['last_zip_date'] for vazia, só vamos colocar a data do arquivo parcial e sair.
 
         # Qual é o ano do zip com data parcial?
         for zip in zips:
@@ -62,12 +62,13 @@ class Files:
                 date = text.split('ATÉ ')[1]
 
                 # As datas estão diferentes?
-                if self.app_data['last_zip_date'] != date:
-                    year = self.app_data['last_zip_date'].split('-')[2]
-                    os.remove(os.path.join(self.historical_folder, f"{year}.zip"))
+                if self.app_data['last_zip_date'] != '':
+                    if self.app_data['last_zip_date'] != date:
+                        year = self.app_data['last_zip_date'].split('-')[2]
+                        os.remove(os.path.join(self.historical_folder, f"{year}.zip"))
+                        return date
+                else:
                     return date
-
-        return ''
     
     def get_stations_list(self):
         """ Usa o último zip dos dados históricos para formar a base de dados 

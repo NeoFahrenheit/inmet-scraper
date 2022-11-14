@@ -48,7 +48,6 @@ class DataProcessing:
 
         self.stations = {}
 
-
     def replace_comma(self, number: str | float) -> float | str:
         """ Retorna a string `number` com a vírgula substituída por um ponto. """
 
@@ -96,10 +95,9 @@ class DataProcessing:
         else:
             return number
 
-    def concat_dados_historicos(self, stations: list, isAll: bool = False):
-        ''' Concatena os dados históricos para que todas as estações estejam em 
-        um arquivo só. Usado para dados históricos para o 2019 e posteriores. Também constrói
-        a base de dados das estações. '''
+    def concat_dados_historicos(self, stations: list):
+        ''' Concatena os dados históricos das estações em `stations` para que todas elas estejam em 
+        um arquivo só. '''
 
         isIt2019 = False
 

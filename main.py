@@ -4,8 +4,10 @@ import wx.richtext as rt
 import json
 from pathlib import Path
 from pubsub import pub
+import datetime
 
-import data_processing
+from id import ID
+import about
 import web_scraper
 import file_manager
 
@@ -13,8 +15,9 @@ class Main(wx.Frame):
     def __init__(self, parent):
         super().__init__(parent, style=wx.DEFAULT_FRAME_STYLE)
 
+        self.version = 0.1
         self.app_folder = os.path.join(Path.home(), '4waTT')
-        self.appdata_folder = Path.home()
+        self.userdata_folder = Path.home()
         self.is_processing_being_done = False
         
         self.app_data = {}
@@ -33,6 +36,8 @@ class Main(wx.Frame):
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.on_timer)
         self.timer.Start(1000)
+
+        # TODO Na inicializao, precisamos ver se a data do zip parcial continua igual.
 
     def make_subscriptions(self):
         """ Faz os `pub.subscribe` necessários para essa classe. """
@@ -67,6 +72,8 @@ class Main(wx.Frame):
 
         # Criando o wx.ListCtrl.
         self.stationsCtrl = wx.ListCtrl(panel, -1, style=wx.LC_REPORT)
+        self.stationsCtrl.Bind(wx.EVT_LIST_ITEM_SELECTED, self._on_station_click)
+        self.stationsCtrl.Bind(wx.EVT_LIST_ITEM_RIGHT_CLICK, self._on_station_rclick)
         self.stationsCtrl.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
         self.stationsCtrl.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
         self.stationsCtrl.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
@@ -103,33 +110,33 @@ class Main(wx.Frame):
         # Criando o sizer de procurar por estações.
         searchSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Procurar por estação')
 
-        searchCtrl = wx.SearchCtrl(panel, -1)
+        self.searchCtrl = wx.SearchCtrl(panel, -1)
         self.Bind(wx.EVT_SEARCH, self._on_search)
         self.searchBox = wx.ListBox(panel, -1)
         self.Bind(wx.EVT_LISTBOX, self._on_list_box)
         self.Bind(wx.EVT_LISTBOX_DCLICK, self._on_dclicked_list_box)
 
-        searchSizer.Add(searchCtrl, flag=wx.ALL | wx.EXPAND, border=5)
+        searchSizer.Add(self.searchCtrl, flag=wx.ALL | wx.EXPAND, border=5)
         searchSizer.Add(self.searchBox, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando o sizer de informações da estação.
         detailsSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Detalhes da estação')
-        self.detailsList = wx.ListCtrl(panel, -1, size=(220, 200), style=wx.LC_REPORT)
-        self.detailsList.InsertColumn(0, 'Parâmetro', wx.LIST_FORMAT_CENTRE)
-        self.detailsList.InsertColumn(1, 'Valor', wx.LIST_FORMAT_LEFT)
+        self.detailsCtrl = wx.ListCtrl(panel, -1, size=(220, 200), style=wx.LC_REPORT)
+        self.detailsCtrl.InsertColumn(0, 'Parâmetro', wx.LIST_FORMAT_CENTRE)
+        self.detailsCtrl.InsertColumn(1, 'Valor', wx.LIST_FORMAT_LEFT)
 
-        self.detailsList.SetColumnWidth(0, 100)
-        self.detailsList.SetColumnWidth(1, 250)
+        self.detailsCtrl.SetColumnWidth(0, 100)
+        self.detailsCtrl.SetColumnWidth(1, 250)
 
-        self.detailsList.InsertItem(0, 'Região')
-        self.detailsList.InsertItem(1, 'UF')
-        self.detailsList.InsertItem(2, 'Estação')
-        self.detailsList.InsertItem(3, 'Código')
-        self.detailsList.InsertItem(4, 'Latitude')
-        self.detailsList.InsertItem(5, 'Longitude')
-        self.detailsList.InsertItem(6, 'Altitude')
-        self.detailsList.InsertItem(7, 'Fundação')
-        detailsSizer.Add(self.detailsList, flag=wx.ALL | wx.EXPAND, border=5)
+        self.detailsCtrl.InsertItem(0, 'Região')
+        self.detailsCtrl.InsertItem(1, 'UF')
+        self.detailsCtrl.InsertItem(2, 'Estação')
+        self.detailsCtrl.InsertItem(3, 'Código')
+        self.detailsCtrl.InsertItem(4, 'Latitude')
+        self.detailsCtrl.InsertItem(5, 'Longitude')
+        self.detailsCtrl.InsertItem(6, 'Altitude')
+        self.detailsCtrl.InsertItem(7, 'Fundação')
+        detailsSizer.Add(self.detailsCtrl, flag=wx.ALL | wx.EXPAND, border=5)
 
         # Criando a caixa de texto do logger.
         self.rt = rt.RichTextCtrl(panel, -1, style=rt.RE_READONLY)
@@ -165,6 +172,12 @@ class Main(wx.Frame):
         master_sizer.Add(station_sizer, proportion=2, flag=wx.ALL, border=5)
         master_sizer.Add(self.info_sizer, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
 
+        if self.app_data['saved']:
+            for dic in self.app_data['saved']:
+                concat = 'Sim' if dic['is_concat'] else 'Não'
+                update = 'Sim' if dic['is_updated'] else 'Não'
+                self.stationsCtrl.Append([dic['station'], concat, update])
+
         panel.SetSizerAndFit(master_sizer)
 
     def init_menu(self):
@@ -172,24 +185,50 @@ class Main(wx.Frame):
 
         menu = wx.MenuBar()
         file = wx.Menu()
-        update = wx.Menu()
-        about = wx.Menu()
+        edit = wx.Menu()
+        models = wx.Menu()
+        log = wx.Menu()
+        help = wx.Menu()
 
         menu.Append(file, 'Arquivo')
-        menu.Append(update, 'Atualizar')
-        menu.Append(about, 'Sobre')
+        menu.Append(edit, 'Editar')
+        menu.Append(models, 'Modelos')
+        menu.Append(log, 'Log')
+        menu.Append(help, 'Ajuda')
 
-        reset = update.Append(-1, 'Reconstruir a base de dados', 'Apaga toda a base de dados e a re-constrói.')
+        make = file.Append(-1, 'Construir base de dados', 'Constrói a base de dados.')
+        reset = file.Append(-1, 'Resetar a base de dados', 'Apaga toda a base de dados e a constrói novamente. Pode demorar vários minutos.')
+        file.AppendSeparator()
+        exit = file.Append(-1, 'Sair', 'Fecha o programa')
+        self.Bind(wx.EVT_MENU, self._on_populate, make)
+        self.Bind(wx.EVT_MENU, self._on_reset, reset)
+        self.Bind(wx.EVT_MENU, self.on_quit, exit)
 
-        self.Bind(wx.EVT_MENU, self.on_reset, reset)
+        concat = edit.Append(-1, 'Concatenar estações', 'Concatena todas as estações cadastradas.')
+        refresh = edit.Append(-1, 'Atualizar estações', 'Atualiza todas as estações cadastradas.')
+        delete = edit.Append(-1, 'Remover estações', 'Remove todos os dados das estações selecionadas.')
+        self.Bind(wx.EVT_MENU, self._delete_station, delete)
+        
+        models.Append(-1, 'Ainda por vir...')
 
+        log_scroll = log.Append(ID.MENU_SCROLL, 'Manter log sempre abaixo', 'Mantém a janela de log sempre abaixo quando novas mensagens são inseridas.', kind=wx.ITEM_CHECK)
+        log_clear = log.Append(-1, 'Limpar log', 'Limpa a janela de log.')
+        log_save = log.Append(-1, 'Salvar log', 'Salva o conteúdo da janela de log para um arquivo txt.')
+        self.Bind(wx.EVT_MENU, self._on_log_scroll, log_scroll)
+        self.Bind(wx.EVT_MENU, self._on_log_clear, log_clear)
+        self.Bind(wx.EVT_MENU, self._on_log_save, log_save)
+
+        about = help.Append(-1, 'Sobre', 'Exibe informações sobre este programa.')
+        self.Bind(wx.EVT_MENU, self._on_about, about)
+        
+        menu.Check(ID.MENU_SCROLL, self.app_data['keep_scrolling'])
         self.SetMenuBar(menu)
 
     def load_file(self):
         """ Carrega o arquivo de configuração para `self.app_data`. Se ele não existir,
         será criado com as configurações padrão. """
 
-        path = os.path.join(self.appdata_folder, '.4waTT.json')
+        path = os.path.join(self.userdata_folder, '.4waTT.json')
         file_exists = os.path.isfile(path)
 
         if file_exists:
@@ -197,20 +236,18 @@ class Main(wx.Frame):
                 text = f.read()
                 self.app_data = json.loads(text)
         else:
-            self.app_data = {
-                'keep_scrolling': True,
-                'last_zip_date': '',    # Data dos últimos dados no último zip.
-                'saved': {},
-                'stations': {},
-            }
+            self.app_data.clear()
+            self.app_data['keep_scrolling'] = True
+            self.app_data['last_zip_date'] = '' # Data dos últimos dados no último zip.
+            self.app_data['saved'] = []
+            self.app_data['stations'] = {}
             
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(self.app_data, f, indent=4)
+            self.save_file()
 
     def save_file(self):
         """ Salva `self.app_data` no arquivo de configuração. """
 
-        path = os.path.join(self.appdata_folder, '.4waTT.json')
+        path = os.path.join(self.userdata_folder, '.4waTT.json')
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(self.app_data, f, indent=4)
 
@@ -238,14 +275,26 @@ class Main(wx.Frame):
         """ Atualiza o valor das informações da estação usando a `key`. """
         
         dic = self.app_data['stations'][key]
-        self.detailsList.SetItem(0, 1, dic['REGIAO:'])
-        self.detailsList.SetItem(1, 1, dic['UF:'])
-        self.detailsList.SetItem(2, 1, dic['ESTACAO:'])
-        self.detailsList.SetItem(3, 1, dic['CODIGO (WMO):'])
-        self.detailsList.SetItem(4, 1, dic['LATITUDE:'])
-        self.detailsList.SetItem(5, 1, dic['LONGITUDE:'])
-        self.detailsList.SetItem(6, 1, dic['ALTITUDE:'])
-        self.detailsList.SetItem(7, 1, dic['DATA DE FUNDACAO:'])
+        self.detailsCtrl.SetItem(0, 1, dic['REGIAO:'])
+        self.detailsCtrl.SetItem(1, 1, dic['UF:'])
+        self.detailsCtrl.SetItem(2, 1, dic['ESTACAO:'])
+        self.detailsCtrl.SetItem(3, 1, dic['CODIGO (WMO):'])
+        self.detailsCtrl.SetItem(4, 1, dic['LATITUDE:'])
+        self.detailsCtrl.SetItem(5, 1, dic['LONGITUDE:'])
+        self.detailsCtrl.SetItem(6, 1, dic['ALTITUDE:'])
+        self.detailsCtrl.SetItem(7, 1, dic['DATA DE FUNDACAO:'])
+
+    def clear_station_info(self):
+        """ Limpa a wx.ListCtrl que mostra os dados das estações. """
+        
+        self.detailsCtrl.SetItem(0, 1, '')
+        self.detailsCtrl.SetItem(1, 1, '')
+        self.detailsCtrl.SetItem(2, 1, '')
+        self.detailsCtrl.SetItem(3, 1, '')
+        self.detailsCtrl.SetItem(4, 1, '')
+        self.detailsCtrl.SetItem(5, 1, '')
+        self.detailsCtrl.SetItem(6, 1, '')
+        self.detailsCtrl.SetItem(7, 1, '')
 
     def _on_search(self, event):
         """ Chamada quando o usuário usa o campo de Pesquisasr. """
@@ -255,7 +304,6 @@ class Main(wx.Frame):
 
         self.searchBox.Clear()        
         text = event.GetString().lower()
-        out_list = []
 
         for station in self.app_data['stations'].values():
             if station['name'].lower().find(text) > -1:
@@ -275,26 +323,45 @@ class Main(wx.Frame):
 
         index = self.searchBox.GetSelection()
         station = self.searchBox.GetString(index).split()[0]
-        self.add_stations_ctrl(station)
+        self._add_stations_ctrl(station)
 
     def on_timer(self, event):
         """ Chamada a cada segundo. Chama `pub.sendMessage('ping-timer')`. """
 
         pub.sendMessage('ping-timer')
 
-    def on_reset(self, event):
+    def _on_populate(self, event):
+        """ Constrói a base de dados para o programa. """
+
+        if self.app_data['stations']:
+            wx.MessageBox('A base de dados já existe.', 'Base de dados já existente', parent=self)
+            return
+        else:
+            self.is_processing_being_done = True
+            func = self.file_manager.get_stations_list
+            web_scraper.Scraper(self, self.app_data, func)
+
+    def _on_reset(self, event):
         """ Apaga todos os arquivos do programa e reconstrói a base de dados. """
 
-        dlg = wx.MessageDialog(self, 'Você tem certeza que deseja reconstruir a base de dados?',
+        dlg = wx.MessageDialog(self, 'Você tem certeza que deseja reconstruir a base de dados? Isto deleterá todos os arquivos do programa!',
         'Reconstruir a base de dados', wx.YES_NO | wx.ICON_WARNING)
         response = dlg.ShowModal()
 
         if response == wx.ID_YES:
             self.is_processing_being_done = True
-            self.file_manager.clean_all(False)
-            self.file_manager.check_folders()
-            func = self.file_manager.get_stations_list
 
+            self.state.Clear()
+            self.city.Clear()
+            self.searchCtrl.Clear()
+            self.stationsCtrl.DeleteAllItems()
+            self.clear_station_info()
+
+            self.file_manager.clean_all()
+            self.file_manager.check_folders()
+            
+            self.load_file()
+            func = self.file_manager.get_stations_list
             web_scraper.Scraper(self, self.app_data, func)
 
     def _on_state(self, event):
@@ -326,7 +393,7 @@ class Main(wx.Frame):
         """ Chamada quando o usuário clica no botão `Adicionar`. """
 
         station = self.city.GetValue().split()[0]
-        self.add_stations_ctrl(station)
+        self._add_stations_ctrl(station)
 
     def add_log(self, text: str, isError: bool = False):
         """ Adiciona `text` ao log. `isError` define a cor do texto. """
@@ -336,14 +403,15 @@ class Main(wx.Frame):
         else:
             self.rt.BeginTextColour(wx.BLACK)
 
-        self.rt.WriteText(text)
+        time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.rt.WriteText(f"{time}: {text}")
         self.rt.Newline()
         self.rt.EndTextColour()
 
         if self.app_data['keep_scrolling']:
             self.rt.ShowPosition(self.rt.GetLastPosition())
 
-    def add_stations_ctrl(self, station: str):
+    def _add_stations_ctrl(self, station: str):
         """ Insere uma estação ao `self.stationsCtrl`. """
 
         size = self.stationsCtrl.GetItemCount()
@@ -354,7 +422,15 @@ class Main(wx.Frame):
                 found = True
 
         if not found:
-            self.stationsCtrl.Append([station, "Não", "Não"])
+            self.stationsCtrl.Append([station, False, False])
+            self.app_data['saved'].append({'station': station, 'is_concat': False, 'is_updated': False})
+
+            # Criando um arquivo vazio no disco. Será sobescrito quando concatenado.
+            path = os.path.join(self.app_folder, f'{station}.csv')
+            file = open(path, 'w')
+            file.close()
+
+            self.save_file()
 
     def on_clear_progress(self):
         """ Limpa e reseta todos os campos de progresso de download. """
@@ -365,6 +441,117 @@ class Main(wx.Frame):
         self.file_text.SetLabel('')
         self.size_text.SetLabel('')
         self.speed_text.SetLabel('')
+
+    def _on_station_click(self, event):
+        """ Chamada quando o usuário clica num item em `self.stationsCtrl`. """
+
+        item = self.stationsCtrl.GetFirstSelected()
+        data = self.stationsCtrl.GetItem(item)
+        key = data.Text
+
+        self._on_city_selected(key)
+
+    def _on_station_rclick(self, event):
+        """ Chamada quando o usuário clica com o botão direito em `self.stationsCtrl`. """
+
+        count = self.stationsCtrl.GetSelectedItemCount()
+        item = self.stationsCtrl.GetFirstSelected()
+        stations = []
+
+        while item != -1:
+            data = self.stationsCtrl.GetItem(item)
+            item = self.stationsCtrl.GetNextSelected(item)
+            stations.append(data.Text)
+
+        scr = wx.GetMousePosition()
+        rel = self.ScreenToClient(scr)
+        
+        menu = self._crate_popup_menu(stations)
+        self.PopupMenu(menu, rel)
+
+    def _crate_popup_menu(self, stations: list):
+        """ Cria um menu com base nos itens selecionados em `self.stationsCtrl`. """
+
+        menu = wx.Menu()
+        concat = menu.Append(-1, 'Concatenar estações selecionadas', 'aaaa')
+        update = menu.Append(-1, 'Atualizar estações selecionadas')
+        remove = menu.Append(-1, 'Remover estações selecionadas')
+        menu.AppendSeparator()
+        save = menu.Append(-1, 'Salvar estações selecionadas')
+
+        self.Bind(wx.EVT_MENU, self._delete_station, remove)
+
+        return menu
+
+    def _delete_station(self, station: str):
+        """ Delete `station` em `self.stationsCtrl`. """
+
+        dlg = wx.MessageDialog(self, "Você tem certeza que deseja deletar as estações selecionadas?",
+        "Deletar estações", wx.YES_NO | wx.ICON_WARNING)
+        response = dlg.ShowModal()
+
+        # Indetifica os itens selecionados e armazena em stations.
+        if response == wx.ID_YES:
+            item = self.stationsCtrl.GetFirstSelected()
+            stations = []
+            while item != -1:
+                data = self.stationsCtrl.GetItem(item)
+                stations.append(data.Text)
+                item = self.stationsCtrl.GetNextSelected(item)
+
+            # Deleta os itens selecionados.
+            for station in stations:
+                for i in range (0, self.stationsCtrl.GetItemCount()):
+                    if self.stationsCtrl.GetItemText(i, 0) == station:
+                        self.stationsCtrl.DeleteItem(i)
+
+                        # Deletando a estação no arquivo de configuração.
+
+                        for j in range (0, len(self.app_data['saved'])):
+                            dic = self.app_data['saved'][j]
+                            if dic['station'] == station:
+                                del self.app_data['saved'][j]
+                                break   # Sai apenas deste for interior.
+
+                        # Agora, vamos deletá-lo do disco.
+                        path = os.path.join(self.app_folder, f"{station}.csv")
+                        if os.path.isfile(path):
+                            os.remove(path)
+                            
+                        break   # Sai apenas deste for interior.
+
+            self.save_file()
+
+    def _on_log_scroll(self, event):
+        """ Chamada quando o usuário muda a CheckBox de scroll do log. """
+
+        obj = event.GetEventObject()
+        value = obj.IsChecked(ID.MENU_SCROLL)
+        self.app_data['keep_scrolling'] = value
+        pub.sendMessage('save-file')
+
+    def _on_log_clear(self, event):
+        """ Limpa a janela de log. """
+
+        self.rt.Clear()
+
+    def _on_log_save(self, event):
+        """ Salva o log para um arquivo .txt. """
+
+        dlg = wx.FileDialog(self, 'Seleciona um local e nome para salvar', wildcard="txt (*.txt)|*.txt",
+        style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
+
+        if dlg.ShowModal() == wx.ID_OK:
+            path = dlg.GetPath()
+            self.rt.SaveFile(path)
+
+            wx.MessageBox('Arquivo salvo com sucesso.', 'Sucesso', parent=self)
+
+    def _on_about(self, event):
+        """ Abre a janela de sobre. """
+
+        win = about.About(self)
+        win.ShowModal()
 
     def update_current_gauge(self, value: int):
         """ Atualuza o valor de `self.current_gauge`. """
@@ -419,10 +606,8 @@ class Main(wx.Frame):
             'Processos em andamento', wx.ICON_INFORMATION | wx.YES_NO)
             res = dlg.ShowModal()
             if res == wx.ID_YES:
-                self.OnEndThreads()
                 self.Destroy()
         else:
-            self.OnEndThreads()
             self.Destroy()
 
 
