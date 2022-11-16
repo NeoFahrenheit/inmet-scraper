@@ -53,6 +53,7 @@ class Main(wx.Frame):
         pub.subscribe(self.on_clear_progress, 'clean-progress')
         pub.subscribe(self.update_current_gauge, 'update-current-gauge')
         pub.subscribe(self.update_overall_gauge, 'update-overall-gauge')
+        pub.subscribe(self.update_overall_gauge_range, 'update-overall-gauge-range')
         pub.subscribe(self.update_current_gauge_range, 'update-current-gauge-range')
         pub.subscribe(self.update_file_text, 'update-file-text')
         pub.subscribe(self.update_overall_text, 'update-overall-text')
@@ -79,10 +80,12 @@ class Main(wx.Frame):
         self.stationsCtrl.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
         self.stationsCtrl.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
         self.stationsCtrl.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
+        self.stationsCtrl.InsertColumn(3, 'Limpo', wx.LIST_FORMAT_CENTRE)
 
-        self.stationsCtrl.SetColumnWidth(0, 120)
-        self.stationsCtrl.SetColumnWidth(1, 120)
-        self.stationsCtrl.SetColumnWidth(2, 120)
+        self.stationsCtrl.SetColumnWidth(0, 100)
+        self.stationsCtrl.SetColumnWidth(1, 100)
+        self.stationsCtrl.SetColumnWidth(2, 100)
+        self.stationsCtrl.SetColumnWidth(3, 100)
 
         # Criando o sizer de seleção / pesquisa.
         comboSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Adicionar estações')
@@ -149,10 +152,10 @@ class Main(wx.Frame):
 
         self.overall_gauge = wx.Gauge(panel, -1)
         self.current_gauge = wx.Gauge(panel, -1)
-        self.overall_text = wx.StaticText(panel, -1, 'Overall Info')
-        self.file_text = wx.StaticText(panel, -1, 'File information')
-        self.size_text = wx.StaticText(panel, -1, 'Size')
-        self.speed_text = wx.StaticText(panel, -1, 'Speed')
+        self.overall_text = wx.StaticText(panel, -1, '')
+        self.file_text = wx.StaticText(panel, -1, '')
+        self.size_text = wx.StaticText(panel, -1, '')
+        self.speed_text = wx.StaticText(panel, -1, '')
 
         self.progress_sizer.Add(self.overall_text, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, border=10)
         self.progress_sizer.Add(self.overall_gauge, flag=wx.EXPAND | wx.ALL, border=10)
@@ -177,7 +180,8 @@ class Main(wx.Frame):
             for dic in self.app_data['saved']:
                 concat = 'Sim' if dic['is_concat'] else 'Não'
                 update = 'Sim' if dic['is_updated'] else 'Não'
-                self.stationsCtrl.Append([dic['station'], concat, update])
+                clean = 'Sim' if dic['is_clean'] else 'Não'
+                self.stationsCtrl.Append([dic['station'], concat, update, clean])
 
         panel.SetSizerAndFit(master_sizer)
 
@@ -206,9 +210,12 @@ class Main(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_quit, exit)
 
         concat = edit.Append(-1, 'Concatenar estações', 'Concatena todas as estações cadastradas.')
-        refresh = edit.Append(-1, 'Atualizar estações', 'Atualiza todas as estações cadastradas.')
+        update = edit.Append(-1, 'Atualizar estações', 'Atualiza todas as estações cadastradas.')
+        clean = edit.Append(-1, 'Limpar estações', 'Limpa todas as estações cadastradas.')
+        edit.AppendSeparator()
         delete = edit.Append(-1, 'Remover estações', 'Remove todos os dados das estações selecionadas.')
         self.Bind(wx.EVT_MENU, self._concat_stations, concat)
+        self.Bind(wx.EVT_MENU, self._update_stations, update)
         self.Bind(wx.EVT_MENU, self._delete_station, delete)
         
         models.Append(-1, 'Ainda por vir...')
@@ -424,8 +431,8 @@ class Main(wx.Frame):
                 found = True
 
         if not found:
-            self.stationsCtrl.Append([station, False, False])
-            self.app_data['saved'].append({'station': station, 'is_concat': False, 'is_updated': False})
+            self.stationsCtrl.Append([station, 'Não', 'Não', 'Não'])
+            self.app_data['saved'].append({'station': station, 'is_concat': False, 'is_updated': False, 'is_clean': False})
 
             # Criando um arquivo vazio no disco. Será sobescrito quando concatenado.
             path = os.path.join(self.app_folder, f'{station}.csv')
@@ -439,7 +446,7 @@ class Main(wx.Frame):
 
         self.overall_gauge.SetValue(0)
         self.current_gauge.SetValue(0)
-        self.overall_text.SetLabel('')
+        self.overall_text.SetLabel('Processamento / download concluído.')
         self.file_text.SetLabel('')
         self.size_text.SetLabel('')
         self.speed_text.SetLabel('')
@@ -475,38 +482,61 @@ class Main(wx.Frame):
         """ Cria um menu com base nos itens selecionados em `self.stationsCtrl`. """
 
         menu = wx.Menu()
-        concat = menu.Append(-1, 'Concatenar estações selecionadas', 'aaaa')
-        update = menu.Append(-1, 'Atualizar estações selecionadas')
-        remove = menu.Append(-1, 'Remover estações selecionadas')
+        concat = menu.Append(-1, 'Concatenar estações selecionadas', 'Concatena todas as estações que estão selecionadas.')
+        update = menu.Append(-1, 'Atualizar estações selecionadas', 'Atualiza todas as estações que estão selecionadas.')
+        clean = menu.Append(-1, 'Limpar estações selecionadas', 'Limpa todas as estações que estão selecionadas.')
+        remove = menu.Append(-1, 'Remover estações selecionadas', 'Remove todas as estações que estão selecionadas.')
         menu.AppendSeparator()
-        save = menu.Append(-1, 'Salvar estações selecionadas')
+        save = menu.Append(-1, 'Salvar estações selecionadas', 'Salva todas as estações que estão selecionadas para um lugar de sua escolha.')
 
         self.Bind(wx.EVT_MENU, self._delete_station, remove)
 
         return menu
 
-    def get_stations_from_ctrl(self, onlyNotConcat: bool = False, onlyNotUpdated: bool = False) -> list:
-        """ Retorna todas as estações inseridas em `self.stationsCtrl. `"""
+    def get_concat_ready_stations(self, onlyNotConcat: bool = False) -> list:
+        """ Retorna uma lista de tuplas das estações inseridas em `self.stationsCtrl` elegíveis para concatenação. """
 
         count = self.stationsCtrl.GetItemCount()
         out = []
 
-        if onlyNotConcat:
-            for i in range(0, count):
-                status = self.stationsCtrl.GetItemText(i, 1)
-                if status != 'Sim':
-                    out.append(self.stationsCtrl.GetItemText(i))
-        
-        elif onlyNotUpdated:
-            for i in range(0, count):
-                status = self.stationsCtrl.GetItemText(i, 2)
-                if status != 'Sim':
-                    out.append(self.stationsCtrl.GetItemText(i))
+        for i in range(0, count):
+            station = self.stationsCtrl.GetItemText(i)
+            concat = self.stationsCtrl.GetItemText(i, 1)
 
-        else:
-            for i in range(0, self.stationsCtrl.GetItemCount()):
-                out.append(self.stationsCtrl.GetItemText(i))
-            
+            if concat != 'Sim':
+                out.append(station)
+
+        return out
+
+    def get_update_ready_stations(self):
+        """ Retorna uma lista de tuplas das estações inseridas em `self.stationsCtrl` elegíveis para atualização. """
+
+        count = self.stationsCtrl.GetItemCount()
+        out = []
+
+        for i in range(0, count):
+            station = self.stationsCtrl.GetItemText(i)
+            concat = self.stationsCtrl.GetItemText(i, 1)
+            updated = self.stationsCtrl.GetItemText(i, 2)
+
+            if concat == 'Sim' and updated != 'Sim':
+                out.append(station)
+
+        return out
+
+    def get_clean_ready_stations(self):
+        """ Retorna uma lista das estações inseridas em `self.stationsCtrl` elegíveis para atualização. """
+
+        count = self.stationsCtrl.GetItemCount()
+        out = []
+
+        for i in range(0, count):
+            station = self.stationsCtrl.GetItemText(i)
+            concat = self.stationsCtrl.GetItemText(i, 1)
+
+            if concat == 'Sim':
+                out.append(station)
+
         return out
 
     def _concat_stations(self, event):
@@ -519,12 +549,12 @@ class Main(wx.Frame):
         #     stations.append(data.Text)
         #     item = self.stationsCtrl.GetNextSelected(item)
 
-        stations = self.get_stations_from_ctrl(onlyNotConcat=True)
+        stations = self.get_concat_ready_stations()
         if not stations:
             wx.MessageBox('Nenhuma estação precisa ser concatenada.')
             return
 
-        self.set_processing_being_done(True)
+        self.is_processing_being_done = True
         data_processing.DataProcessing(self.app_data).concat_dados_historicos(stations)
 
         for station in stations:
@@ -533,33 +563,57 @@ class Main(wx.Frame):
                     dic['is_concat'] = True
 
         self.update_station_ctrl()
-        self.set_processing_being_done(False)
+        self.is_processing_being_done = False
+        self.on_clear_progress()
+        self.save_file()
+
+    def _update_stations(self, event):
+        """ Atualiza todas as estações. """
+
+        stations = self.get_update_ready_stations()
+        if not stations:
+            wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
+            ' estar concatenada primeiro.')
+            return
+
+        self.is_processing_being_done = True
+        data_processing.DataProcessing(self.app_data).update_estacoes(stations)
+
+        for station in stations:
+            for dic in self.app_data['saved']:
+                if dic['station'] == station:
+                    dic['is_updated'] = True
+
+        self.update_station_ctrl()
+        self.is_processing_being_done = False
+        self.on_clear_progress()
         self.save_file()
 
     def _delete_station(self, station: str):
         """ Delete `station` em `self.stationsCtrl`. """
 
+        # Indetifica os itens selecionados e armazena em stations.
+        item = self.stationsCtrl.GetFirstSelected()
+        stations = []
+        while item != -1:
+            data = self.stationsCtrl.GetItem(item)
+            stations.append(data.Text)
+            item = self.stationsCtrl.GetNextSelected(item)
+
+        if len(stations) == 0:
+            wx.MessageBox('Não há estações selecionadas.')
+            return
+
         dlg = wx.MessageDialog(self, "Você tem certeza que deseja deletar as estações selecionadas?",
         "Deletar estações", wx.YES_NO | wx.ICON_WARNING)
         response = dlg.ShowModal()
-
-        # Indetifica os itens selecionados e armazena em stations.
         if response == wx.ID_YES:
-            item = self.stationsCtrl.GetFirstSelected()
-            stations = []
-            while item != -1:
-                data = self.stationsCtrl.GetItem(item)
-                stations.append(data.Text)
-                item = self.stationsCtrl.GetNextSelected(item)
-
-            # Deleta os itens selecionados.
             for station in stations:
                 for i in range (0, self.stationsCtrl.GetItemCount()):
                     if self.stationsCtrl.GetItemText(i, 0) == station:
                         self.stationsCtrl.DeleteItem(i)
 
                         # Deletando a estação no arquivo de configuração.
-
                         for j in range (0, len(self.app_data['saved'])):
                             dic = self.app_data['saved'][j]
                             if dic['station'] == station:
@@ -576,7 +630,7 @@ class Main(wx.Frame):
                             
                         break   # Sai apenas deste for interior.
 
-            self.save_file()
+                self.save_file()
 
     def update_station_ctrl(self):
         """ Atualiza `self.stationsCtrl` para refletir mudanças em `self.app_data['saved']`. """
@@ -591,8 +645,10 @@ class Main(wx.Frame):
             if dic['station'] == item:
                 concat = 'Sim' if dic['is_concat'] else 'Não'
                 update = 'Sim' if dic['is_updated'] else 'Não'
+                clean = 'Sim' if dic['is_clean'] else 'Não'
                 self.stationsCtrl.SetItem(i, 1, concat)
                 self.stationsCtrl.SetItem(i, 2, update)
+                self.stationsCtrl.SetItem(i, 3, clean)
 
     def _on_log_scroll(self, event):
         """ Chamada quando o usuário muda a CheckBox de scroll do log. """
@@ -635,6 +691,11 @@ class Main(wx.Frame):
 
         self.overall_gauge.SetValue(value)
 
+    def update_overall_gauge_range(self, value: int):
+        """ Atualuza o range, valor máximo, de `self.current_gauge`. """
+
+        self.overall_gauge.SetRange(value)
+
     def update_current_gauge_range(self, value: int):
         """ Atualuza o range, valor máximo, de `self.current_gauge`. """
 
@@ -665,10 +726,6 @@ class Main(wx.Frame):
         provavelmente já acabou, esconde o sizer do progresso. """
 
         self.is_processing_being_done = value
-
-        self.on_clear_progress()
-        self.progress_sizer.ShowItems(value)
-        self.info_sizer.Layout()
 
     def on_quit(self, event):
         ''' Chamada quando o usuário clica no botão para fechar o programa. '''

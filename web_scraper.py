@@ -45,8 +45,6 @@ class Scraper(Thread):
 
         # Comunica o frame principal sobre as características deste download.
         self.main_frame.on_clear_progress()
-        self.main_frame.progress_sizer.ShowItems(True)
-        self.main_frame.info_sizer.Layout()
         self.main_frame.overall_gauge.SetRange(len(zips))
         self.main_frame.overall_text.SetLabel('Baixando dados históricos...')
 
@@ -70,7 +68,7 @@ class Scraper(Thread):
                         os.remove(path)
                     
                     CallAfter(pub.sendMessage, topicName='log', 
-                    text='Erro ao baixar arquivos históricos.', 
+                    text=f'Erro ao baixar arquivo histórico {filename}. Abortando operação...', 
                     isError=True)
                     break
 
@@ -94,4 +92,5 @@ class Scraper(Thread):
         # tenho que dar um jeito de chamar essas funções aqui.
 
         self.call_after()
+        self.parent.on_clear_progress()
         pub.sendMessage('set-processing-being-done', value=False)

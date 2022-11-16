@@ -100,12 +100,14 @@ class DataProcessing:
         isIt2019 = False
 
         files = os.listdir(self.historical_folder)
-        zips_size = len(stations)
+        station_lenght = len(stations)
 
+        year_count = 0
         pub.sendMessage('clean-progress')
+        pub.sendMessage('update-overall-gauge-range', value=len(files) - 2)
+        pub.sendMessage('update-current-gauge-range', value=station_lenght)
         files.sort()
 
-        zip_count = 0
         for file in files:
             # Para cada path de um zip, vamos coletar o path de todos os .csv contidos
             # dentro dele.
@@ -119,9 +121,10 @@ class DataProcessing:
                 isIt2019 = True
             
             pub.sendMessage('update-overall-text', text=f"Concatenando arquivos históricos do ano {ano}...")
-            pub.sendMessage('update-current-gauge-range', value=zips_size)
+            
+            station_count = 0
+            # pub.sendMessage('update-current-gauge', value=station_count)
 
-            current_csv_count = 0
             for csv in csv_list:
                 # Capturamos apenas o nome da estação.
                 estacao = csv.split('_')[3]
@@ -170,32 +173,34 @@ class DataProcessing:
                 else:
                     df.to_csv(file, index=False)
 
-                current_csv_count += 1
-                pub.sendMessage('update-current-gauge', value=current_csv_count)
+                station_count += 1
+                pub.sendMessage('update-current-gauge', value=station_count)
 
-            zip_count += 1
-            pub.sendMessage('update-overall-gauge', value=zip_count)
+            year_count += 1
+            pub.sendMessage('update-overall-gauge', value=year_count)
 
-    def update_estacoes(self):
+    def update_estacoes(self, stations) -> list:
         ''' Esta função só deve ser chamada quando todos os dados históricos já estiverem baixados e concatenados. 
         Acessa o site do INMET pela API e baixa todos os dados faltantes desde a última entrada nos .csv
-        salvos na pasta documenttos até o dia anterior. '''
+        salvos na pasta documenttos até o dia anterior. Retorna a lista com as estações que atualizaram com sucesso. '''
         
-        pub.sendMessage('OnUpdateTransferSpeed', text=['', ''])
-        pub.sendMessage('update-overall-gauge', value=0)
-        pub.sendMessage('update-current-gauge', value=0)
+        # TODO Como vou retornar as estações que falharam em atualizar?
+        # TODO Tem que salvar as infos em 'last_updated' em app_data.
 
-        pub.sendMessage('update-filename', text='')
-        pub.sendMessage('update-page-info', text="Atualizando os arquivos com dados mais recentes...")
+        pub.sendMessage('on_clear_progress')
+        pub.sendMessage('update-overall-text', text="Atualizando arquivos...")
 
         csv_count = 0
 
-        number_of_csvs = len(os.listdir(self.concat_folder))
-        pub.sendMessage('update-current-gauge-maximum-value', value=number_of_csvs)
+        number_of_csvs = len(stations)
+        pub.sendMessage('update-current-gauge-range', value=number_of_csvs)
 
         for csv in os.listdir(self.concat_folder):
             estacao = csv
-            pub.sendMessage('update-filename', text=f"Atualizando estação {estacao.split('.')[0]}...")
+            if estacao.split('.')[0] not in stations:
+                continue
+            
+            pub.sendMessage('update-file-text', text=f"Atualizando estação {estacao.split('.')[0]}...")
 
             csv_path = os.path.join(self.concat_folder, csv)
             df = pd.read_csv(csv_path, delimiter=',', dtype={'Chuva': object, 'Pressao': object, 
@@ -222,9 +227,9 @@ class DataProcessing:
             request = f"https://apitempo.inmet.gov.br/estacao/{last_str}/{yesterday_str}/{estacao.split('.')[0]}"
             data = self.get_estacao_csv(request)
             if not data:
-                CallAfter(pub.sendMessage, topicName='log-text', text=f"Falha ao baixar dados da estação {estacao.split('.')[0]}.", isError=True)
+                pub.sendMessage('log', text=f"Falha ao baixar dados da estação {estacao.split('.')[0]}.", isError=True)
                 csv_count += 1
-                CallAfter(pub.sendMessage, topicName='update-current-gauge', value=csv_count)
+                pub.sendMessage('update-current-gauge', value=csv_count)
                 continue
 
             json_df = pd.DataFrame(data)
@@ -242,9 +247,7 @@ class DataProcessing:
             new_df.to_csv(csv_path, index=False)
 
             csv_count += 1
-            CallAfter(pub.sendMessage, topicName='update-current-gauge', value=csv_count)
-
-        CallAfter(pub.sendMessage, topicName='update-filename', text=f"Processamento concluído!")
+            pub.sendMessage('update-current-gauge', value=csv_count)
 
     def get_estacao_csv(self, url: str) -> str | None:
         ''' Faz uma requisição a API do INMET solicitando dados de uma determinada estação
