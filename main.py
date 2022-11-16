@@ -10,6 +10,7 @@ from id import ID
 import about
 import web_scraper
 import file_manager
+import data_processing
 
 class Main(wx.Frame):
     def __init__(self, parent):
@@ -17,6 +18,7 @@ class Main(wx.Frame):
 
         self.version = 0.1
         self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.concat_folder = os.path.join(self.app_folder, 'dados_concatenados')
         self.userdata_folder = Path.home()
         self.is_processing_being_done = False
         
@@ -159,7 +161,6 @@ class Main(wx.Frame):
         self.progress_sizer.Add(self.size_text, flag=wx.EXPAND | wx.LEFT | wx.BOTTOM, border=10)
         self.progress_sizer.Add(self.speed_text, flag=wx.EXPAND | wx.LEFT, border=10)
         self.info_sizer.Add(self.progress_sizer, flag=wx.EXPAND | wx.TOP, border=5)
-        self.progress_sizer.ShowItems(False)
 
         # Adionando os sizers ao master.
         station_ctrl_sizer.Add(self.stationsCtrl, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
@@ -207,6 +208,7 @@ class Main(wx.Frame):
         concat = edit.Append(-1, 'Concatenar estações', 'Concatena todas as estações cadastradas.')
         refresh = edit.Append(-1, 'Atualizar estações', 'Atualiza todas as estações cadastradas.')
         delete = edit.Append(-1, 'Remover estações', 'Remove todos os dados das estações selecionadas.')
+        self.Bind(wx.EVT_MENU, self._concat_stations, concat)
         self.Bind(wx.EVT_MENU, self._delete_station, delete)
         
         models.Append(-1, 'Ainda por vir...')
@@ -483,6 +485,57 @@ class Main(wx.Frame):
 
         return menu
 
+    def get_stations_from_ctrl(self, onlyNotConcat: bool = False, onlyNotUpdated: bool = False) -> list:
+        """ Retorna todas as estações inseridas em `self.stationsCtrl. `"""
+
+        count = self.stationsCtrl.GetItemCount()
+        out = []
+
+        if onlyNotConcat:
+            for i in range(0, count):
+                status = self.stationsCtrl.GetItemText(i, 1)
+                if status != 'Sim':
+                    out.append(self.stationsCtrl.GetItemText(i))
+        
+        elif onlyNotUpdated:
+            for i in range(0, count):
+                status = self.stationsCtrl.GetItemText(i, 2)
+                if status != 'Sim':
+                    out.append(self.stationsCtrl.GetItemText(i))
+
+        else:
+            for i in range(0, self.stationsCtrl.GetItemCount()):
+                out.append(self.stationsCtrl.GetItemText(i))
+            
+        return out
+
+    def _concat_stations(self, event):
+        """ Pega as estações selecionadas em `self.stationsCtrl` e as concatena. """
+
+        # item = self.stationsCtrl.GetFirstSelected()
+        # stations = []
+        # while item != -1:
+        #     data = self.stationsCtrl.GetItem(item)
+        #     stations.append(data.Text)
+        #     item = self.stationsCtrl.GetNextSelected(item)
+
+        stations = self.get_stations_from_ctrl(onlyNotConcat=True)
+        if not stations:
+            wx.MessageBox('Nenhuma estação precisa ser concatenada.')
+            return
+
+        self.set_processing_being_done(True)
+        data_processing.DataProcessing(self.app_data).concat_dados_historicos(stations)
+
+        for station in stations:
+            for dic in self.app_data['saved']:
+                if dic['station'] == station:
+                    dic['is_concat'] = True
+
+        self.update_station_ctrl()
+        self.set_processing_being_done(False)
+        self.save_file()
+
     def _delete_station(self, station: str):
         """ Delete `station` em `self.stationsCtrl`. """
 
@@ -514,13 +567,32 @@ class Main(wx.Frame):
                                 break   # Sai apenas deste for interior.
 
                         # Agora, vamos deletá-lo do disco.
-                        path = os.path.join(self.app_folder, f"{station}.csv")
-                        if os.path.isfile(path):
-                            os.remove(path)
+                        app_path = os.path.join(self.app_folder, f"{station}.csv")
+                        concat_path = os.path.join(self.concat_folder, f"{station}.csv")
+                        if os.path.isfile(app_path):
+                            os.remove(app_path)
+                        if os.path.isfile(concat_path):
+                            os.remove(concat_path)
                             
                         break   # Sai apenas deste for interior.
 
             self.save_file()
+
+    def update_station_ctrl(self):
+        """ Atualiza `self.stationsCtrl` para refletir mudanças em `self.app_data['saved']`. """
+
+        if not self.app_data['saved']:
+            return
+
+        for i in range(0, len(self.app_data['saved'])):
+            dic = self.app_data['saved'][i]
+            item = self.stationsCtrl.GetItemText(i)
+
+            if dic['station'] == item:
+                concat = 'Sim' if dic['is_concat'] else 'Não'
+                update = 'Sim' if dic['is_updated'] else 'Não'
+                self.stationsCtrl.SetItem(i, 1, concat)
+                self.stationsCtrl.SetItem(i, 2, update)
 
     def _on_log_scroll(self, event):
         """ Chamada quando o usuário muda a CheckBox de scroll do log. """
@@ -595,7 +667,7 @@ class Main(wx.Frame):
         self.is_processing_being_done = value
 
         self.on_clear_progress()
-        self.progress_sizer.ShowItems(False)
+        self.progress_sizer.ShowItems(value)
         self.info_sizer.Layout()
 
     def on_quit(self, event):

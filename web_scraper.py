@@ -51,7 +51,7 @@ class Scraper(Thread):
         self.main_frame.overall_text.SetLabel('Baixando dados históricos...')
 
         zip_count = 0
-        for zip in zips[22:]:
+        for zip in zips:
             url = zip.a['href']
             filename = os.path.basename(url)
             path = os.path.join(self.historical_folder, filename)

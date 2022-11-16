@@ -92,6 +92,7 @@ class Files:
                 d[key] = value
 
             d['name'] = f"{d['CODIGO (WMO):']} {d['ESTACAO:']}"
+            d['last_updated'] = ''
             stations[d['CODIGO (WMO):']] = d
 
         self.app_data['stations'] = stations

@@ -8,8 +8,6 @@ from datetime import timedelta, date
 import requests
 from pubsub import pub
 
-import file_manager
-
 # O nome e a posição das colunas dos dados históricos e das estações são diferentes!
 # Esse dicionário vai nos auxiliar para pegar um determinado dado nas duas tabelas.
 # lista[0] -> Colunas como estão nos dados históricos.
@@ -102,13 +100,9 @@ class DataProcessing:
         isIt2019 = False
 
         files = os.listdir(self.historical_folder)
-        zips_size = len(files)
+        zips_size = len(stations)
 
-        pub.sendMessage('update-size-text', text='')
-        pub.sendMessage('update-speed-text', text='')
-        pub.sendMessage('update-overall-gauge-range', value=zips_size)
-        pub.sendMessage('update-overall-gauge', value=0)
-
+        pub.sendMessage('clean-progress')
         files.sort()
 
         zip_count = 0
@@ -125,13 +119,14 @@ class DataProcessing:
                 isIt2019 = True
             
             pub.sendMessage('update-overall-text', text=f"Concatenando arquivos históricos do ano {ano}...")
-            pub.sendMessage('update-current-gauge-range', value=len(csv_list))
-            pub.sendMessage('update-current-gauge', value=0)
+            pub.sendMessage('update-current-gauge-range', value=zips_size)
 
             current_csv_count = 0
             for csv in csv_list:
                 # Capturamos apenas o nome da estação.
                 estacao = csv.split('_')[3]
+                if estacao not in stations:
+                    continue
 
                 pub.sendMessage('update-file-text', text=f"Processando estação {estacao}...")
                 if isIt2019:
