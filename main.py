@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from pubsub import pub
 import datetime
+import shutil
 
 from id import ID
 import about
@@ -117,7 +118,7 @@ class Main(wx.Frame):
 
         self.searchCtrl = wx.SearchCtrl(panel, -1)
         self.Bind(wx.EVT_SEARCH, self._on_search)
-        self.searchBox = wx.ListBox(panel, -1)
+        self.searchBox = wx.ListBox(panel, ID.LISTBOX)
         self.Bind(wx.EVT_LISTBOX, self._on_list_box)
         self.Bind(wx.EVT_LISTBOX_DCLICK, self._on_dclicked_list_box)
 
@@ -217,7 +218,7 @@ class Main(wx.Frame):
         self.Bind(wx.EVT_MENU, self._concat_stations, concat)
         self.Bind(wx.EVT_MENU, self._update_stations, update)
         self.Bind(wx.EVT_MENU, self._clean_stations, clean)
-        self.Bind(wx.EVT_MENU, self._delete_station, delete)
+        self.Bind(wx.EVT_MENU, self._delete_stations, delete)
         
         models.Append(-1, 'Ainda por vir...')
 
@@ -491,19 +492,35 @@ class Main(wx.Frame):
         """ Cria um menu com base nos itens selecionados em `self.stationsCtrl`. """
 
         menu = wx.Menu()
-        concat = menu.Append(-1, 'Concatenar estações selecionadas', 'Concatena todas as estações que estão selecionadas.')
-        update = menu.Append(-1, 'Atualizar estações selecionadas', 'Atualiza todas as estações que estão selecionadas.')
-        clean = menu.Append(-1, 'Limpar estações selecionadas', 'Limpa todas as estações que estão selecionadas.')
-        remove = menu.Append(-1, 'Remover estações selecionadas', 'Remove todas as estações que estão selecionadas.')
+        concat = menu.Append(ID.POPUP_CONCAT, 'Concatenar estações selecionadas', 'Concatena todas as estações que estão selecionadas.')
+        update = menu.Append(ID.POPUP_UPDATE, 'Atualizar estações selecionadas', 'Atualiza todas as estações que estão selecionadas.')
+        clean = menu.Append(ID.POPUP_CLEAN, 'Limpar estações selecionadas', 'Limpa todas as estações que estão selecionadas.')
+        remove = menu.Append(ID.POPUP_DELETE, 'Remover estações selecionadas', 'Remove todas as estações que estão selecionadas.')
         menu.AppendSeparator()
-        save = menu.Append(-1, 'Salvar estações selecionadas', 'Salva todas as estações que estão selecionadas para um lugar de sua escolha.')
+        save = menu.Append(ID.POPUP_SAVE, 'Salvar estações selecionadas', 'Salva todas as estações que estão selecionadas para um lugar de sua escolha.')
 
-        self.Bind(wx.EVT_MENU, self._delete_station, remove)
+        self.Bind(wx.EVT_MENU, self._concat_stations, concat)
+        self.Bind(wx.EVT_MENU, self._update_stations, update)
+        self.Bind(wx.EVT_MENU, self._clean_stations, clean)
+        self.Bind(wx.EVT_MENU, self._delete_stations, remove)
+        self.Bind(wx.EVT_MENU, self._save_stations, save)
 
         return menu
 
-    def get_concat_ready_stations(self, onlyNotConcat: bool = False) -> list:
-        """ Retorna uma lista de tuplas das estações inseridas em `self.stationsCtrl` elegíveis para concatenação. """
+    def _get_selected_stations(self) -> list:
+        """ Retorna uma lista com as estações selecionadas em `self.stationsCtrl`. """
+
+        item = self.stationsCtrl.GetFirstSelected()
+        stations = []
+        while item != -1:
+            data = self.stationsCtrl.GetItem(item)
+            stations.append(data.Text)
+            item = self.stationsCtrl.GetNextSelected(item)
+
+        return stations
+
+    def get_concat_ready_stations(self) -> list:
+        """ Retorna uma lista das estações inseridas em `self.stationsCtrl` elegíveis para concatenação. """
 
         count = self.stationsCtrl.GetItemCount()
         out = []
@@ -533,7 +550,7 @@ class Main(wx.Frame):
 
         return out
 
-    def get_clean_ready_stations(self):
+    def get_clean_ready_stations(self) -> list:
         """ Retorna uma lista das estações inseridas em `self.stationsCtrl` elegíveis para a limpeza. """
 
         count = self.stationsCtrl.GetItemCount()
@@ -542,8 +559,24 @@ class Main(wx.Frame):
         for i in range(0, count):
             station = self.stationsCtrl.GetItemText(i)
             concat = self.stationsCtrl.GetItemText(i, 1)
+            updated = self.stationsCtrl.GetItemText(i, 2)
 
-            if concat == 'Sim':
+            if concat == 'Sim' and updated == 'Sim':
+                out.append(station)
+
+        return out
+
+    def get_save_ready_stations(self) -> list:
+        """ Retorna uma lista das estações que podem ser salvas em disco. """
+
+        count = self.stationsCtrl.GetItemCount()
+        out = []
+
+        for i in range(0, count):
+            station = self.stationsCtrl.GetItemText(i)
+            clean = self.stationsCtrl.GetItemText(i, 3)
+
+            if clean == 'Sim':
                 out.append(station)
 
         return out
@@ -551,18 +584,19 @@ class Main(wx.Frame):
     def _concat_stations(self, event):
         """ Pega as estações selecionadas em `self.stationsCtrl` e as concatena. """
 
-        # item = self.stationsCtrl.GetFirstSelected()
-        # stations = []
-        # while item != -1:
-        #     data = self.stationsCtrl.GetItem(item)
-        #     stations.append(data.Text)
-        #     item = self.stationsCtrl.GetNextSelected(item)
-
         if self.is_processing_being_done:
             wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
             return
+        
+        concat_ready = self.get_concat_ready_stations()
 
-        stations = self.get_concat_ready_stations()
+        # IDs dos menus de Popup são maiores que 2000.
+        if event.GetId() > 2000:
+            selected = self._get_selected_stations()
+            stations = [x for x in selected if x in concat_ready]   # Interseção
+        else:
+            concat_ready = stations
+
         if not stations:
             wx.MessageBox('Nenhuma estação precisa ser concatenada.')
             return
@@ -585,7 +619,15 @@ class Main(wx.Frame):
             wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
             return
 
-        stations = self.get_update_ready_stations()
+        update_ready = self.get_update_ready_stations()
+
+        # IDs dos menus de Popup são maiores que 2000.
+        if event.GetId() > 2000:
+            selected = self._get_selected_stations()
+            stations = [x for x in selected if x in update_ready]   # Interseção
+        else:
+            update_ready = stations
+
         if not stations:
             wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
             ' estar concatenada primeiro.')
@@ -610,7 +652,15 @@ class Main(wx.Frame):
             wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
             return
 
-        stations = self.get_clean_ready_stations()
+        clean_ready = self.get_clean_ready_stations()
+
+        # IDs dos menus de Popup são maiores que 2000.
+        if event.GetId() > 2000:
+            selected = self._get_selected_stations()
+            stations = [x for x in selected if x in clean_ready]   # Interseção
+        else:
+            clean_ready = stations
+
         if not stations:
             wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
             ' estar concatenada primeiro.')
@@ -627,16 +677,15 @@ class Main(wx.Frame):
         wx.CallAfter(self.on_clear_progress)
         self.save_file()
 
-    def _delete_station(self, station: str):
-        """ Delete `station` em `self.stationsCtrl`. """
+    def _delete_stations(self, station: str):
+        """ Delete `station` em `self.stationsCtrl`, através do popup menu. """
+
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
+            return
 
         # Indetifica os itens selecionados e armazena em stations.
-        item = self.stationsCtrl.GetFirstSelected()
-        stations = []
-        while item != -1:
-            data = self.stationsCtrl.GetItem(item)
-            stations.append(data.Text)
-            item = self.stationsCtrl.GetNextSelected(item)
+        stations = self._get_selected_stations()
 
         if len(stations) == 0:
             wx.MessageBox('Não há estações selecionadas.')
@@ -666,6 +715,34 @@ class Main(wx.Frame):
 
             self.save_file()
 
+    def _save_stations(self, event):
+        """ Salva as estações selecionadas em uma pasta do disco. """
+
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
+            return
+
+        save_ready = self.get_save_ready_stations()
+        selected = self._get_selected_stations()
+        stations = [x for x in selected if x in save_ready]   # Interseção
+
+        if not stations:
+            wx.MessageBox("Nenhuma estação pronta para ser salva em disco. Lembre: A estação precisa estar "
+            " concatenada e limpa para ser salva no disco.")
+            return
+
+        dlg = wx.DirDialog(self, 'Selecione uma pasta para salvar os arquivos')
+        if dlg.ShowModal() == wx.ID_OK:
+            dst_path = dlg.GetPath()
+        else:
+            return
+
+        for station in stations:
+            src_path = os.path.join(self.app_folder, f"{station}.csv")
+            shutil.copy2(src_path, dst_path)
+        
+        wx.MessageBox('Arquivos salvos com sucesso.', 'Sucesso', wx.ICON_INFORMATION)
+
     def update_station_ctrl(self):
         """ Atualiza `self.stationsCtrl` para refletir mudanças em `self.app_data['saved']`. """
 
@@ -687,10 +764,13 @@ class Main(wx.Frame):
     def _on_log_scroll(self, event):
         """ Chamada quando o usuário muda a CheckBox de scroll do log. """
 
-        obj = event.GetEventObject()
-        value = obj.IsChecked(ID.MENU_SCROLL)
-        self.app_data['keep_scrolling'] = value
-        pub.sendMessage('save-file')
+        try:
+            obj = event.GetEventObject()
+            value = obj.IsChecked(ID.MENU_SCROLL)
+            self.app_data['keep_scrolling'] = value
+            pub.sendMessage('save-file')
+        except:
+            pass
 
     def _on_log_clear(self, event):
         """ Limpa a janela de log. """

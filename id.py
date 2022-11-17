@@ -1,2 +1,10 @@
 class ID:
     MENU_SCROLL = 1
+    LISTBOX = 2
+
+    
+    POPUP_CONCAT = 2002
+    POPUP_UPDATE = 2003
+    POPUP_CLEAN = 2004 
+    POPUP_DELETE = 2005
+    POPUP_SAVE = 2006
