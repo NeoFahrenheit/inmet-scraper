@@ -6,6 +6,7 @@ from pathlib import Path
 from pubsub import pub
 import datetime
 import shutil
+from datetime import timedelta, date
 
 from id import ID
 import about
@@ -177,12 +178,7 @@ class Main(wx.Frame):
         master_sizer.Add(station_sizer, proportion=2, flag=wx.ALL, border=5)
         master_sizer.Add(self.info_sizer, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
 
-        if self.app_data['saved']:
-            for station, dic in self.app_data['saved'].items():
-                concat = 'Sim' if dic['is_concat'] else 'Não'
-                update = 'Sim' if dic['is_updated'] else 'Não'
-                clean = 'Sim' if dic['is_clean'] else 'Não'
-                self.stationsCtrl.Append([station, concat, update, clean])
+        self.load_stations_saved_data()
 
         panel.SetSizerAndFit(master_sizer)
 
@@ -281,6 +277,37 @@ class Main(wx.Frame):
 
         self.state.SetValue(out_list[0])
         self._on_state(None)
+
+    def load_stations_saved_data(self):
+        """ Carrega do arquivo de configuração as estações salvas e exibe em `self.stationsCtrl`. """
+
+        if self.app_data['saved']:
+            for station, dic in self.app_data['saved'].items():
+                concat = 'Sim' if dic['is_concat'] else 'Não'
+                
+                # Analisando se este .csv está desatualizado.
+                if dic['last_updated']:
+                    update = ''
+                    file_date = dic['last_updated']
+                    ld = file_date.split('-')
+                    last = date(int(ld[2]), int(ld[1]), int(ld[0]))     # dd-mm-yyyy
+                    last += timedelta(days=1)
+
+                    yesterday = date.today() - timedelta(days=1)
+                    yesterday_str = f"{yesterday.year}-{yesterday.month}-{yesterday.day}"
+
+                    # Se o intervalo entre a último data e o dia anterior for menor que um dia,
+                    # não precisamos atualizar este .csv.
+                    if not yesterday - last >= timedelta(days=1):
+                        update = 'Sim'
+                    else:
+                        update = 'Não'
+                        dic['last_updated'] = yesterday_str
+                else:
+                    update = 'Não'
+
+                clean = 'Sim' if dic['is_clean'] else 'Não'
+                self.stationsCtrl.Append([station, concat, update, clean])
 
     def _on_city_selected(self, key: str):
         """ Atualiza o valor das informações da estação usando a `key`. """
@@ -595,7 +622,7 @@ class Main(wx.Frame):
             selected = self._get_selected_stations()
             stations = [x for x in selected if x in concat_ready]   # Interseção
         else:
-            concat_ready = stations
+            stations = concat_ready
 
         if not stations:
             wx.MessageBox('Nenhuma estação precisa ser concatenada.')
@@ -626,7 +653,7 @@ class Main(wx.Frame):
             selected = self._get_selected_stations()
             stations = [x for x in selected if x in update_ready]   # Interseção
         else:
-            update_ready = stations
+            stations = update_ready
 
         if not stations:
             wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
@@ -638,6 +665,7 @@ class Main(wx.Frame):
 
         for station in stations:
             self.app_data['saved'][station]['is_updated'] = True
+            self.app_data['saved'][station]['is_clean'] = False     # Será adicionado mais dados no final do arquivo direto do site do inmet.
 
         self.update_station_ctrl()
         self.is_processing_being_done = False
@@ -659,11 +687,11 @@ class Main(wx.Frame):
             selected = self._get_selected_stations()
             stations = [x for x in selected if x in clean_ready]   # Interseção
         else:
-            clean_ready = stations
+            stations = clean_ready
 
         if not stations:
-            wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
-            ' estar concatenada primeiro.')
+            wx.MessageBox('Nenhuma estação elegível para ser limpa. Lembre-se que a estação precisa'
+            ' estar atualizada primeiro.')
             return
 
         self.is_processing_being_done = True

@@ -39,10 +39,12 @@ class About(wx.Dialog):
 
         self.writeInBold('Equipe:')
         self.rt.Newline()
-        self.writeInURL('https://github.com/aaa', 'Nome 1')
-        self.writeInURL('https://github.com/aaa', 'Nome 2')
-        self.writeInURL('https://github.com/aaa', 'Nome 3')
-        self.writeInURL('https://github.com/aaa', 'Nome 4')
+        self.writeInURL('https://www.linkedin.com/in/ismaelpauchner/', 'ISMAEL PAULO REFOSCO PAUCHNER')
+        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'FERNANDO COSTA MALHEIROS')
+        self.writeInURL('https://www.linkedin.com/in/n%C3%ADcolas-gradela-soares-5b4318182', 'NICOLAS GRADELA SOARES')
+        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'RAFAEL DE BRITTO CARNEIRO JUNHO')
+        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'SACHA AZEVEDO MORAES')
+        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'SANDRO AUGUSTO MARTINS MATTOSO')
         self.rt.Newline()
 
         self.writeInBold('Dependências:')
