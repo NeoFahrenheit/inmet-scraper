@@ -51,12 +51,12 @@ class Main(wx.Frame):
 
         # wx.Gauge e wx.StaticTex de progresso.
         pub.subscribe(self.on_clear_progress, 'clean-progress')
-        pub.subscribe(self.update_current_gauge, 'update-current-gauge')
-        pub.subscribe(self.update_overall_gauge, 'update-overall-gauge')
         pub.subscribe(self.update_overall_gauge_range, 'update-overall-gauge-range')
         pub.subscribe(self.update_current_gauge_range, 'update-current-gauge-range')
-        pub.subscribe(self.update_file_text, 'update-file-text')
+        pub.subscribe(self.update_current_gauge, 'update-current-gauge')
+        pub.subscribe(self.update_overall_gauge, 'update-overall-gauge')
         pub.subscribe(self.update_overall_text, 'update-overall-text')
+        pub.subscribe(self.update_file_text, 'update-file-text')
         pub.subscribe(self.update_size_text, 'update-size-text')
         pub.subscribe(self.update_speed_text, 'update-speed-text')
     
@@ -177,11 +177,11 @@ class Main(wx.Frame):
         master_sizer.Add(self.info_sizer, proportion=3, flag=wx.EXPAND | wx.ALL, border=10)
 
         if self.app_data['saved']:
-            for dic in self.app_data['saved']:
+            for station, dic in self.app_data['saved'].items():
                 concat = 'Sim' if dic['is_concat'] else 'Não'
                 update = 'Sim' if dic['is_updated'] else 'Não'
                 clean = 'Sim' if dic['is_clean'] else 'Não'
-                self.stationsCtrl.Append([dic['station'], concat, update, clean])
+                self.stationsCtrl.Append([station, concat, update, clean])
 
         panel.SetSizerAndFit(master_sizer)
 
@@ -216,6 +216,7 @@ class Main(wx.Frame):
         delete = edit.Append(-1, 'Remover estações', 'Remove todos os dados das estações selecionadas.')
         self.Bind(wx.EVT_MENU, self._concat_stations, concat)
         self.Bind(wx.EVT_MENU, self._update_stations, update)
+        self.Bind(wx.EVT_MENU, self._clean_stations, clean)
         self.Bind(wx.EVT_MENU, self._delete_station, delete)
         
         models.Append(-1, 'Ainda por vir...')
@@ -248,7 +249,7 @@ class Main(wx.Frame):
             self.app_data.clear()
             self.app_data['keep_scrolling'] = True
             self.app_data['last_zip_date'] = '' # Data dos últimos dados no último zip.
-            self.app_data['saved'] = []
+            self.app_data['saved'] = {}
             self.app_data['stations'] = {}
             
             self.save_file()
@@ -342,16 +343,24 @@ class Main(wx.Frame):
     def _on_populate(self, event):
         """ Constrói a base de dados para o programa. """
 
-        if self.app_data['stations']:
-            wx.MessageBox('A base de dados já existe.', 'Base de dados já existente', parent=self)
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
             return
-        else:
-            self.is_processing_being_done = True
-            func = self.file_manager.get_stations_list
-            web_scraper.Scraper(self, self.app_data, func)
+
+        self.is_processing_being_done = True
+
+        func = self.file_manager.get_stations_list
+        web_scraper.Scraper(self, self.app_data, func)
+
+        self.is_processing_being_done = False
+        self.on_clear_progress()
 
     def _on_reset(self, event):
         """ Apaga todos os arquivos do programa e reconstrói a base de dados. """
+
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
+            return
 
         dlg = wx.MessageDialog(self, 'Você tem certeza que deseja reconstruir a base de dados? Isto deleterá todos os arquivos do programa!',
         'Reconstruir a base de dados', wx.YES_NO | wx.ICON_WARNING)
@@ -432,7 +441,7 @@ class Main(wx.Frame):
 
         if not found:
             self.stationsCtrl.Append([station, 'Não', 'Não', 'Não'])
-            self.app_data['saved'].append({'station': station, 'is_concat': False, 'is_updated': False, 'is_clean': False})
+            self.app_data['saved'][station] = {'is_concat': False, 'is_updated': False, 'is_clean': False, 'last_updated': ''}
 
             # Criando um arquivo vazio no disco. Será sobescrito quando concatenado.
             path = os.path.join(self.app_folder, f'{station}.csv')
@@ -525,7 +534,7 @@ class Main(wx.Frame):
         return out
 
     def get_clean_ready_stations(self):
-        """ Retorna uma lista das estações inseridas em `self.stationsCtrl` elegíveis para atualização. """
+        """ Retorna uma lista das estações inseridas em `self.stationsCtrl` elegíveis para a limpeza. """
 
         count = self.stationsCtrl.GetItemCount()
         out = []
@@ -549,6 +558,10 @@ class Main(wx.Frame):
         #     stations.append(data.Text)
         #     item = self.stationsCtrl.GetNextSelected(item)
 
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
+            return
+
         stations = self.get_concat_ready_stations()
         if not stations:
             wx.MessageBox('Nenhuma estação precisa ser concatenada.')
@@ -558,17 +571,19 @@ class Main(wx.Frame):
         data_processing.DataProcessing(self.app_data).concat_dados_historicos(stations)
 
         for station in stations:
-            for dic in self.app_data['saved']:
-                if dic['station'] == station:
-                    dic['is_concat'] = True
+            self.app_data['saved'][station]['is_concat'] = True
 
         self.update_station_ctrl()
         self.is_processing_being_done = False
-        self.on_clear_progress()
+        wx.CallAfter(self.on_clear_progress)
         self.save_file()
 
     def _update_stations(self, event):
         """ Atualiza todas as estações. """
+
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
+            return
 
         stations = self.get_update_ready_stations()
         if not stations:
@@ -580,13 +595,36 @@ class Main(wx.Frame):
         data_processing.DataProcessing(self.app_data).update_estacoes(stations)
 
         for station in stations:
-            for dic in self.app_data['saved']:
-                if dic['station'] == station:
-                    dic['is_updated'] = True
+            self.app_data['saved'][station]['is_updated'] = True
 
         self.update_station_ctrl()
         self.is_processing_being_done = False
-        self.on_clear_progress()
+        wx.CallAfter(self.on_clear_progress)
+        self.save_file()
+
+    def _clean_stations(self, event):
+        """ Faz a limpeza de todas as estações elegíveis em `self.stationsCtrl.` Para uma estação ser elegível, 
+        ela deve estar, no mínimo, concatenada. """
+
+        if self.is_processing_being_done:
+            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
+            return
+
+        stations = self.get_clean_ready_stations()
+        if not stations:
+            wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
+            ' estar concatenada primeiro.')
+            return
+
+        self.is_processing_being_done = True
+        data_processing.DataProcessing(self.app_data).do_data_cleaning(stations)
+
+        for station in stations:
+            self.app_data['saved'][station]['is_clean'] = True
+
+        self.update_station_ctrl()
+        self.is_processing_being_done = False
+        wx.CallAfter(self.on_clear_progress)
         self.save_file()
 
     def _delete_station(self, station: str):
@@ -614,11 +652,7 @@ class Main(wx.Frame):
                         self.stationsCtrl.DeleteItem(i)
 
                         # Deletando a estação no arquivo de configuração.
-                        for j in range (0, len(self.app_data['saved'])):
-                            dic = self.app_data['saved'][j]
-                            if dic['station'] == station:
-                                del self.app_data['saved'][j]
-                                break   # Sai apenas deste for interior.
+                        del self.app_data['saved'][station]
 
                         # Agora, vamos deletá-lo do disco.
                         app_path = os.path.join(self.app_folder, f"{station}.csv")
@@ -630,25 +664,25 @@ class Main(wx.Frame):
                             
                         break   # Sai apenas deste for interior.
 
-                self.save_file()
+            self.save_file()
 
     def update_station_ctrl(self):
         """ Atualiza `self.stationsCtrl` para refletir mudanças em `self.app_data['saved']`. """
 
         if not self.app_data['saved']:
             return
+        
+        i = 0
+        # Estamos assumindo que os items estejam na mesma posição em stationsCtrl e no arquivo.
+        for dic in self.app_data['saved'].values():
+            concat = 'Sim' if dic['is_concat'] else 'Não'
+            update = 'Sim' if dic['is_updated'] else 'Não'
+            clean = 'Sim' if dic['is_clean'] else 'Não'
+            self.stationsCtrl.SetItem(i, 1, concat)
+            self.stationsCtrl.SetItem(i, 2, update)
+            self.stationsCtrl.SetItem(i, 3, clean)
 
-        for i in range(0, len(self.app_data['saved'])):
-            dic = self.app_data['saved'][i]
-            item = self.stationsCtrl.GetItemText(i)
-
-            if dic['station'] == item:
-                concat = 'Sim' if dic['is_concat'] else 'Não'
-                update = 'Sim' if dic['is_updated'] else 'Não'
-                clean = 'Sim' if dic['is_clean'] else 'Não'
-                self.stationsCtrl.SetItem(i, 1, concat)
-                self.stationsCtrl.SetItem(i, 2, update)
-                self.stationsCtrl.SetItem(i, 3, clean)
+            i += 1
 
     def _on_log_scroll(self, event):
         """ Chamada quando o usuário muda a CheckBox de scroll do log. """

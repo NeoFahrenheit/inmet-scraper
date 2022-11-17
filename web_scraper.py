@@ -92,5 +92,5 @@ class Scraper(Thread):
         # tenho que dar um jeito de chamar essas funções aqui.
 
         self.call_after()
-        self.parent.on_clear_progress()
+        self.main_frame.on_clear_progress()
         pub.sendMessage('set-processing-being-done', value=False)

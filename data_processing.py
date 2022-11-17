@@ -1,5 +1,5 @@
 import os
-from wx import CallAfter
+from wx import CallAfter, Yield
 import zipfile
 from pathlib import Path
 import pandas as pd
@@ -55,14 +55,6 @@ class DataProcessing:
 
         return number
 
-    def convert_to_quilowatt(self, number: float | int | str) -> float | str:
-        """ Converte kJ/m² para kWh/m². Se o campo estiver vazio, retorna uma string vazia. """
-
-        if isinstance(number, float):
-            return number / 3600
-        else:
-            return ''
-
     def convert_to_hour(self, n: str) -> str:
         ''' Recebe uma str da hora no formato '0', '100', '200', ..., '2200', '2300'
         e retorna no formato HH:MM. '''
@@ -93,6 +85,55 @@ class DataProcessing:
         else:
             return number
 
+    def count_sequent_invalid_data(self, df, column):
+        ''' Conta dados menores que -100 que estão um após o outro, sequencialmente. Ignora o primeiro. '''
+        count = 0
+        size = len(df.index)
+
+        for i in range(0, size):
+            if df[column].iloc[i] < -100:
+                if i + 1 < size and df[column].iloc[i + 1] < -100:
+                    count += 1
+
+        return count
+
+    def count_total_invalid_data(self, df, column):
+        ''' Conta dados menores que -100, não importa como e de que jeito apareçam. '''
+        
+        count = 0
+        size = len(df.index)
+
+        for i in range(0, size):
+            if df[column].iloc[i] < -100:
+                count += 1
+
+        return count
+
+    def drop_sequent_data(self, df, column):
+        ''' Dropa os dados inválidos seguidos. '''
+
+        size = len(df.index)
+        to_drop = []
+        for i in range(0, size):
+            if df[column].iloc[i] < -100:
+                if i + 1 < size and df[column].iloc[i + 1] < -100:
+                    to_drop.append(i + 1)
+        
+        df.drop(df.index[to_drop], inplace=True)
+
+    def substitute(self, x):
+        " Se x for menor que -100, retorna `np.NaN`. "
+
+        if x < -100:
+            return np.NaN
+        else:
+            return x
+
+    def replace_negative_nan(self, df, column):
+        ''' Substitui valores menores que -100 por NaN. '''
+
+        df[column] = df[column].apply(lambda x: self.substitute(x))
+
     def concat_dados_historicos(self, stations: list):
         ''' Concatena os dados históricos das estações em `stations` para que todas elas estejam em 
         um arquivo só. '''
@@ -104,16 +145,25 @@ class DataProcessing:
 
         year_count = 0
         pub.sendMessage('clean-progress')
-        pub.sendMessage('update-overall-gauge-range', value=len(files) - 2)
+        pub.sendMessage('update-overall-gauge-range', value=len(files) -1)
         pub.sendMessage('update-current-gauge-range', value=station_lenght)
         files.sort()
 
         for file in files:
             # Para cada path de um zip, vamos coletar o path de todos os .csv contidos
             # dentro dele.
-            zip = zipfile.ZipFile(os.path.join(self.historical_folder, file))
-            f_list = zip.namelist()
-            csv_list = [csv for csv in f_list if csv.endswith('.CSV')]
+            try:
+                zip = zipfile.ZipFile(os.path.join(self.historical_folder, file))
+                f_list = zip.namelist()
+                csv_list = [csv for csv in f_list if csv.endswith('.CSV')]
+            except:
+                CallAfter(pub.sendMessage, topicName='log', text=f'Falha ao abrir {file}. O arquivo está corrompido ou inválido. Abortando...', isError=True)
+                for estacao in stations:
+                    path = os.path.join(self.concat_folder, f"{estacao}.csv")
+                    if os.path.isfile(path):
+                        os.remove(path)
+
+                return stations.clear()
 
             # Verificamos se o ano é 2019 ou posterior. A formatação dos .csv é diferente.
             ano = int(zip.filename.split('\\')[-1].split('.')[0])
@@ -183,24 +233,23 @@ class DataProcessing:
         ''' Esta função só deve ser chamada quando todos os dados históricos já estiverem baixados e concatenados. 
         Acessa o site do INMET pela API e baixa todos os dados faltantes desde a última entrada nos .csv
         salvos na pasta documenttos até o dia anterior. Retorna a lista com as estações que atualizaram com sucesso. '''
-        
-        # TODO Como vou retornar as estações que falharam em atualizar?
-        # TODO Tem que salvar as infos em 'last_updated' em app_data.
 
-        pub.sendMessage('on_clear_progress')
-        pub.sendMessage('update-overall-text', text="Atualizando arquivos...")
+        CallAfter(pub.sendMessage, topicName='on_clear_progress')
+        CallAfter(pub.sendMessage, topicName='update-overall-text', text="Atualizando arquivos...")
 
-        csv_count = 0
+        csv_count = 1
 
         number_of_csvs = len(stations)
-        pub.sendMessage('update-current-gauge-range', value=number_of_csvs)
+        CallAfter(pub.sendMessage, topicName='update-current-gauge-range', value=number_of_csvs)
 
         for csv in os.listdir(self.concat_folder):
             estacao = csv
-            if estacao.split('.')[0] not in stations:
+            station_key = estacao.split('.')[0] 
+            if station_key not in stations:
                 continue
             
-            pub.sendMessage('update-file-text', text=f"Atualizando estação {estacao.split('.')[0]}...")
+            CallAfter(pub.sendMessage, topicName='update-file-text', text=f"Atualizando estação {estacao.split('.')[0]}...")
+            Yield()
 
             csv_path = os.path.join(self.concat_folder, csv)
             df = pd.read_csv(csv_path, delimiter=',', dtype={'Chuva': object, 'Pressao': object, 
@@ -217,7 +266,7 @@ class DataProcessing:
             # Se o intervalo entre a último data e o dia anterior for menor que um dia,
             # não precisamos atualizar este .csv.
             if not yesterday - last >= timedelta(days=1):
-                CallAfter(pub.sendMessage, topicName='log-text', text=f"O arquivo {csv} não precisou ser modificado, pois já está atualizado.")
+                CallAfter(pub.sendMessage, topicName='log', text=f"O arquivo {csv} não precisou ser modificado, pois já está atualizado.")
                 csv_count += 1
                 CallAfter(pub.sendMessage, topicName='update-current-gauge', value=csv_count)
                 continue
@@ -227,9 +276,10 @@ class DataProcessing:
             request = f"https://apitempo.inmet.gov.br/estacao/{last_str}/{yesterday_str}/{estacao.split('.')[0]}"
             data = self.get_estacao_csv(request)
             if not data:
-                pub.sendMessage('log', text=f"Falha ao baixar dados da estação {estacao.split('.')[0]}.", isError=True)
+                CallAfter(pub.sendMessage, topicName='log', text=f"Falha ao baixar dados da estação {estacao.split('.')[0]}.", isError=True)
                 csv_count += 1
-                pub.sendMessage('update-current-gauge', value=csv_count)
+                CallAfter(pub.sendMessage, topicName='update-current-gauge', value=csv_count)
+                stations.remove(station_key)
                 continue
 
             json_df = pd.DataFrame(data)
@@ -245,9 +295,12 @@ class DataProcessing:
 
             new_df = pd.concat([df, json_df], ignore_index=True)
             new_df.to_csv(csv_path, index=False)
+            
+            self.app_data['saved'][station_key]['last_updated'] = f"{yesterday.day}-{yesterday.month}-{yesterday.year}"
 
             csv_count += 1
-            pub.sendMessage('update-current-gauge', value=csv_count)
+            CallAfter(pub.sendMessage, topicName='update-current-gauge', value=csv_count)
+
 
     def get_estacao_csv(self, url: str) -> str | None:
         ''' Faz uma requisição a API do INMET solicitando dados de uma determinada estação
@@ -258,15 +311,23 @@ class DataProcessing:
         except:
             return None
 
-    def do_data_cleaning(self):
-        """ Remove os valores negativos e NaN dos .csv e substitui para 0. """
+    def do_data_cleaning(self, stations: list):
+        """ Faz a limpeza dos dados das estações presentes em `stations`. Se houver algum erro, a estação 
+        é removida de `stations`. """
 
-        for csv in os.listdir(self.docsPath)[:1]:
-            path = os.path.join(self.docsPath, csv)
-            
-            df = pd.read_csv(path, parse_dates=['Data'])
+        CallAfter(pub.sendMessage, topicName='update-overall-text', text='Limpando os dados...')
+        CallAfter(pub.sendMessage, topicName='update-current-gauge-range', value=len(stations))
 
-            df['Hora'] = pd.to_datetime(df['Hora']).dt.time
+        clean_count = 1
+        for csv in stations:
+            path = os.path.join(self.concat_folder, f"{csv}.csv")
+            CallAfter(pub.sendMessage, topicName='update-file-text', text=f"Limpando estação {csv}")
+            Yield()
+
+            df = pd.read_csv(path, delimiter=',', dtype={'Chuva': object, 'Pressao': object, 
+            'Radiacao': object, 'Temperatura': object, 'Umidade': object})
+
+            # df['Hora'] = pd.to_datetime(df['Hora']).dt.time       # Não é necessário se vamos salvar em um arquivo.
 
             # Normalizando NaN para -9999 para ficar em par com o resto do .csv.
             df['Chuva'].fillna(-9999, inplace=True)
@@ -276,32 +337,55 @@ class DataProcessing:
             df['Umidade'].fillna(-9999, inplace=True)
 
 
-            only_in = [x for x in d_dic.keys()][2:]
-            # Transformando-os todos para float.
+            # Substituindo as vírgulas por ponto para facilitar a conversão para número.
+            only_in = ['Chuva', 'Pressao', 'Radiacao', 'Temperatura', 'Umidade']
             for column in only_in:
                 df[column] = df[column].apply(lambda x: self.replace_comma(x))
                 df[column] = df[column].astype(float)
 
-            # Não podemos colocar 0 em colunas onde há dados inválidos. Os dados podem não existir por
-            # erro de equipamento. Ex: Se choveu em determinado dia e houve erro ou manutenção, não podemos
-            # substituí-lo por 0.
+            # df['Hora'] = pd.to_datetime(df['Hora']).dt.time       # Não é necessário se vamos salvar em um arquivo.
 
-            # Quando encontrarmos ocorrências de -9999, presumimos que os dados são inválido e / ou
-            # não foram coletados. Vamos deixá-los vazios para não confundir os modelos.
-            df['Temperatura'] = df['Temperatura'].apply(lambda x: self.clip_number(x))
-            df['Umidade'] = df['Umidade'].apply(lambda x: self.clip_number(x))
-            df['Radiacao'] = df['Radiacao'].apply(lambda x: self.clip_number(x))
-            df['Chuva'] = df['Chuva'].apply(lambda x: self.clip_number(x))
-            df['Pressao'] = df['Pressao'].apply(lambda x: self.clip_number(x))
+            # Queremos preservar a maior quantidade de dados possível. Quando a radiação estiver -9999, há duas possibilidades.
+            # 1) É um período noturno, portanto é um dado "válido". Pode ser zerado.
+            # 2) Houve erro na estação.
+            # Na maior parte dos casos, quando há erro na estação, todas as colunas são inválidas. Vamos dropar todas elas.
+            df.drop(df[(df.Radiacao < -100) & (df.Chuva < -100) & (df.Pressao < -100) & (df.Temperatura < -100)].index, inplace=True)
 
-            # Antes de continuar, vamos converter kJ/m² para kWh/m².
-            df['Radiacao'] = df['Radiacao'].apply(lambda x: self.convert_to_quilowatt(x))
+            # Agora, podemos substituir os -9999 em 'Radiação" por 0.
+            df.Radiacao.clip(lower=0, inplace=True)
 
-            # Vamos, vamos dropar linhas onde não existam dados válidos para radiação,
-            # não importa o período do dia. Afinal, Radiação é nosso target.
-            df.drop(df[df.Radiacao == ''].index, inplace=True)
+            # Em outros casos mais isolados, apenas um instrumento se demonstra defeituoso e os demais dados da coluna podem estar corretos. 
+            # Dados inválidos descritos logo abaixo são aqueles menores que -100. 
+            # Apenas a coluna Radiacao acima foi zerada para valores menores que -100.
 
-            df.to_csv('/home/leandro/Desktop/test.csv', index=False)
+            # Podemos pensar em deletar a linha dos dados inválidos sequenciais e substituir o valor do campo inválido isolado com o dado anterior, 
+            # com exceção da coluna Radiacao, que já tratamos acima. Os dados inválidos sequenciais, que são mais difícies de tratar, parecem ser poucos, 
+            # o que não impactara de forma significante o nosso dataset. Agora, os dados isolados, podemos substituí-lo com o anterior. Vamos fazer isso!
+            for column in only_in:
+                self.drop_sequent_data(df, column)
+
+            # Agora, vamos substituir os dados inválidos isolados pelo anterior, mas antes de usar o método ffill, 
+            # precisamos transformar os números negativos em NaN primeiro.
+            for column in only_in:
+                self.replace_negative_nan(df, column)
+            df.fillna(method='ffill', inplace=True)
+
+            # Testando os valores mínimos.
+            testing = []
+            testing.append(df.Chuva.min() > - 30)
+            testing.append(df.Pressao.min() > - 30)
+            testing.append(df.Temperatura.min() > - 30)
+            testing.append(df.Umidade.min() > - 30)
+
+            if not all(testing):
+                CallAfter(pub.sendMessage, topicName='log', text=f"Erro ao limpar a estação {csv}.", isError=True)
+                stations.remove(csv)
+                continue
+
+            clean_count += 1
+            CallAfter(pub.sendMessage, topicName='update-current-gauge', value=clean_count)
+
+            df.to_csv(os.path.join(self.app_folder, f"{csv}.csv"), index=False)
 
     def _populate_stations(self, zip):
         """ Forma a base de dados das estações. É usada para a pesquisa. """
