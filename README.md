@@ -5,6 +5,7 @@ Este é um software feito em parceira com os alunos do grupo DS05-20 do curso Da
 ## Features
 - Interfáce gráfica intuitiva
 - Download automático de dados (Web Scraping)
+- Limpeza de dados (Data Cleaning)
 
 ## Instalação
 
