@@ -42,7 +42,6 @@ class DataProcessing:
         self.home = Path.home()
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
-        self.concat_folder = os.path.join(self.app_folder, 'dados_concatenados')
 
         self.stations = {}
 
@@ -159,7 +158,7 @@ class DataProcessing:
             except:
                 CallAfter(pub.sendMessage, topicName='log', text=f'Falha ao abrir {file}. O arquivo está corrompido ou inválido. Abortando...', isError=True)
                 for estacao in stations:
-                    path = os.path.join(self.concat_folder, f"{estacao}.csv")
+                    path = os.path.join(self.app_folder, f"{estacao}.csv")
                     if os.path.isfile(path):
                         os.remove(path)
 
@@ -210,8 +209,8 @@ class DataProcessing:
                     df['Hora'] = df['Hora'].apply(lambda x: self.convert_to_hour_2019(x))
 
                 # Se um .csv já está na pasta de downloads, vamos concatená-lo.
-                file = os.path.join(self.concat_folder, f"{estacao}.csv")
-                if os.path.isfile(file):
+                file = os.path.join(self.app_folder, f"{estacao}.csv")
+                if os.path.isfile(file) and os.stat(file).st_size != 0:
                     on_disk = pd.read_csv(file, dtype={'Chuva': object, 'Pressao': object, 
                     'Radiacao': object, 'Temperatura': object, 'Umidade': object})
 
@@ -242,7 +241,7 @@ class DataProcessing:
         number_of_csvs = len(stations)
         CallAfter(pub.sendMessage, topicName='update-current-gauge-range', value=number_of_csvs)
 
-        for csv in os.listdir(self.concat_folder):
+        for csv in os.listdir(self.app_folder):
             estacao = csv
             station_key = estacao.split('.')[0] 
             if station_key not in stations:
@@ -251,7 +250,7 @@ class DataProcessing:
             CallAfter(pub.sendMessage, topicName='update-file-text', text=f"Atualizando estação {estacao.split('.')[0]}...")
             Yield()
 
-            csv_path = os.path.join(self.concat_folder, csv)
+            csv_path = os.path.join(self.app_folder, csv)
             df = pd.read_csv(csv_path, delimiter=',', dtype={'Chuva': object, 'Pressao': object, 
             'Radiacao': object, 'Temperatura': object, 'Umidade': object})
 
@@ -320,7 +319,7 @@ class DataProcessing:
 
         clean_count = 1
         for csv in stations:
-            path = os.path.join(self.concat_folder, f"{csv}.csv")
+            path = os.path.join(self.app_folder, f"{csv}.csv")
             CallAfter(pub.sendMessage, topicName='update-file-text', text=f"Limpando estação {csv}")
             Yield()
 

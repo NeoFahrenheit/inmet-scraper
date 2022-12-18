@@ -11,7 +11,6 @@ class Files:
         self.home = Path.home()
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
-        self.concat_folder = os.path.join(self.app_folder, 'dados_concatenados')
 
         self.check_folders()
 
@@ -34,14 +33,10 @@ class Files:
         if not os.path.isdir(self.app_folder):
             os.mkdir(self.app_folder)
             os.mkdir(self.historical_folder)
-            os.mkdir(self.concat_folder)
 
         else:
             if not os.path.isdir(self.historical_folder):
                 os.mkdir(self.historical_folder)
-
-            if not os.path.isdir(self.concat_folder):
-                os.mkdir(self.concat_folder)
 
     def check_historial_data(self, zips: list) -> str:
         """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 

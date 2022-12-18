@@ -20,7 +20,6 @@ class Main(wx.Frame):
 
         self.version = 0.1
         self.app_folder = os.path.join(Path.home(), '4waTT')
-        self.concat_folder = os.path.join(self.app_folder, 'dados_concatenados')
         self.userdata_folder = Path.home()
         self.is_processing_being_done = False
         
@@ -601,9 +600,9 @@ class Main(wx.Frame):
 
         for i in range(0, count):
             station = self.stationsCtrl.GetItemText(i)
-            clean = self.stationsCtrl.GetItemText(i, 3)
+            concat = self.stationsCtrl.GetItemText(i, 1)
 
-            if clean == 'Sim':
+            if concat == 'Sim':
                 out.append(station)
 
         return out
@@ -656,7 +655,7 @@ class Main(wx.Frame):
             stations = update_ready
 
         if not stations:
-            wx.MessageBox('Nenhuma estação elegível para ser atualizada. Lembre-se que a estação precisa'
+            wx.MessageBox('Nenhuma estação elegível para ser atualizada.\nLembre-se: que a estação precisa'
             ' estar concatenada primeiro.')
             return
 
@@ -690,7 +689,7 @@ class Main(wx.Frame):
             stations = clean_ready
 
         if not stations:
-            wx.MessageBox('Nenhuma estação elegível para ser limpa. Lembre-se que a estação precisa'
+            wx.MessageBox('Nenhuma estação elegível para ser limpa.\nLembre-se: A estação precisa'
             ' estar atualizada primeiro.')
             return
 
@@ -733,11 +732,8 @@ class Main(wx.Frame):
 
                         # Agora, vamos deletá-lo do disco.
                         app_path = os.path.join(self.app_folder, f"{station}.csv")
-                        concat_path = os.path.join(self.concat_folder, f"{station}.csv")
                         if os.path.isfile(app_path):
                             os.remove(app_path)
-                        if os.path.isfile(concat_path):
-                            os.remove(concat_path)
                             
                         break   # Sai apenas deste for interior.
 
@@ -755,8 +751,8 @@ class Main(wx.Frame):
         stations = [x for x in selected if x in save_ready]   # Interseção
 
         if not stations:
-            wx.MessageBox("Nenhuma estação pronta para ser salva em disco. Lembre: A estação precisa estar "
-            " concatenada e limpa para ser salva no disco.")
+            wx.MessageBox("Nenhuma estação pronta para ser salva em disco.\nLembre-se: A estação precisa estar "
+            " concatenada para ser salva no disco.")
             return
 
         dlg = wx.DirDialog(self, 'Selecione uma pasta para salvar os arquivos')
