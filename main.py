@@ -585,9 +585,8 @@ class Main(wx.Frame):
         for i in range(0, count):
             station = self.stationsCtrl.GetItemText(i)
             concat = self.stationsCtrl.GetItemText(i, 1)
-            updated = self.stationsCtrl.GetItemText(i, 2)
 
-            if concat == 'Sim' and updated == 'Sim':
+            if concat == 'Sim':
                 out.append(station)
 
         return out
@@ -690,7 +689,7 @@ class Main(wx.Frame):
 
         if not stations:
             wx.MessageBox('Nenhuma estação elegível para ser limpa.\nLembre-se: A estação precisa'
-            ' estar atualizada primeiro.')
+            ' estar concatenada primeiro.')
             return
 
         self.is_processing_being_done = True
