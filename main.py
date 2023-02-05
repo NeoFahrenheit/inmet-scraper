@@ -289,7 +289,7 @@ class Main(wx.Frame):
                     update = ''
                     file_date = dic['last_updated']
                     ld = file_date.split('-')
-                    last = date(int(ld[2]), int(ld[1]), int(ld[0]))     # dd-mm-yyyy
+                    last = date(int(ld[0]), int(ld[1]), int(ld[2]))     # dd-mm-yyyy
                     last += timedelta(days=1)
 
                     yesterday = date.today() - timedelta(days=1)
@@ -297,7 +297,7 @@ class Main(wx.Frame):
 
                     # Se o intervalo entre a último data e o dia anterior for menor que um dia,
                     # não precisamos atualizar este .csv.
-                    if not yesterday - last >= timedelta(days=1):
+                    if not yesterday - last >= timedelta(days=2):
                         update = 'Sim'
                     else:
                         update = 'Não'
@@ -659,7 +659,7 @@ class Main(wx.Frame):
             return
 
         self.is_processing_being_done = True
-        data_processing.DataProcessing(self.app_data).update_estacoes(stations)
+        web_scraper.Scraper(self, self.app_data, None).update_estacao(stations)
 
         for station in stations:
             self.app_data['saved'][station]['is_updated'] = True

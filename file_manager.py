@@ -11,6 +11,7 @@ class Files:
         self.home = Path.home()
         self.app_folder = os.path.join(Path.home(), '4waTT')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
+        self.temp_folder = os.path.join(self.app_folder, 'temp')
 
         self.check_folders()
 
@@ -33,10 +34,14 @@ class Files:
         if not os.path.isdir(self.app_folder):
             os.mkdir(self.app_folder)
             os.mkdir(self.historical_folder)
+            os.mkdir(self.temp_folder)
 
         else:
             if not os.path.isdir(self.historical_folder):
                 os.mkdir(self.historical_folder)
+
+            if not os.path.isdir(self.temp_folder):
+                os.mkdir(self.temp_folder)
 
     def check_historial_data(self, zips: list) -> str:
         """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 
@@ -54,10 +59,14 @@ class Files:
 
             if text != 'AUTOMÁTICA':
                 # Este text, aqui, tá no formato 'ATÉ dd-mm-yyyy'
-                date = text.split('ATÉ ')[1]
+                try:
+                    date = text.split('ATÉ ')[1]
+                except:
+                    date = text.split('até ')[1]
 
                 # As datas estão diferentes?
-                if self.app_data['last_zip_date'] != '':
+                last_date = self.app_data['last_zip_date']
+                if last_date and last_date != '':
                     if self.app_data['last_zip_date'] != date:
                         year = self.app_data['last_zip_date'].split('-')[2]
                         os.remove(os.path.join(self.historical_folder, f"{year}.zip"))
