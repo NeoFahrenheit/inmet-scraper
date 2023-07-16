@@ -9,9 +9,8 @@ class Files:
         self.app_data = app_data
 
         self.home = Path.home()
-        self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.app_folder = os.path.join(Path.home(), 'inmet')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
-        self.temp_folder = os.path.join(self.app_folder, 'temp')
 
         self.check_folders()
 
@@ -21,7 +20,7 @@ class Files:
 
         shutil.rmtree(self.app_folder)
         if delete_config_file:
-            path = os.path.join(self.home, '.4waTT.json')
+            path = os.path.join(self.home, '.inmet.json')
 
             if os.path.isfile(path):
                 self.app_data.clear()
@@ -34,14 +33,10 @@ class Files:
         if not os.path.isdir(self.app_folder):
             os.mkdir(self.app_folder)
             os.mkdir(self.historical_folder)
-            os.mkdir(self.temp_folder)
 
         else:
             if not os.path.isdir(self.historical_folder):
                 os.mkdir(self.historical_folder)
-
-            if not os.path.isdir(self.temp_folder):
-                os.mkdir(self.temp_folder)
 
     def check_historial_data(self, zips: list) -> str:
         """ Nos dados históricos, a pasta zip do último ano é sempre parcial, ou seja, 
@@ -50,7 +45,7 @@ class Files:
         `Caso sim`, esta pasta é deletada para ser baixada novamente (não baixa aqui), e retorna 
         uma string com a última data parcial encontrada. """
 
-        # Se self.app_data['last_zip_date'] for vazia, só vamos colocar a data do arquivo parcial e sair.
+        # Se self.app_data['last_date'] for vazia, só vamos colocar a data do arquivo parcial e sair.
 
         # Qual é o ano do zip com data parcial?
         for zip in zips:
@@ -65,10 +60,10 @@ class Files:
                     date = text.split('até ')[1]
 
                 # As datas estão diferentes?
-                last_date = self.app_data['last_zip_date']
+                last_date = self.app_data['last_date']
                 if last_date and last_date != '':
-                    if self.app_data['last_zip_date'] != date:
-                        year = self.app_data['last_zip_date'].split('-')[2]
+                    if self.app_data['last_date'] != date:
+                        year = self.app_data['last_date'].split('-')[2]
                         os.remove(os.path.join(self.historical_folder, f"{year}.zip"))
                         return date
                 else:

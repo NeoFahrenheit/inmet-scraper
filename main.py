@@ -6,7 +6,6 @@ from pathlib import Path
 from pubsub import pub
 import datetime
 import shutil
-from datetime import timedelta, date
 
 from id import ID
 import about
@@ -19,7 +18,7 @@ class Main(wx.Frame):
         super().__init__(parent, style=wx.DEFAULT_FRAME_STYLE)
 
         self.version = 0.1
-        self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.app_folder = os.path.join(Path.home(), 'inmet')
         self.userdata_folder = Path.home()
         self.is_processing_being_done = False
         
@@ -27,8 +26,8 @@ class Main(wx.Frame):
         self.load_file()
         self.file_manager = file_manager.Files(self.app_data)
 
-        self.SetTitle('DNC 4waTT')
-        self.SetSize(1100, 680)
+        self.SetTitle('INMET Scrapper')
+        self.SetSize(1000, 680)
         self.init_ui()
         self.update_combos()
         
@@ -80,13 +79,11 @@ class Main(wx.Frame):
         self.stationsCtrl.Bind(wx.EVT_LIST_ITEM_RIGHT_CLICK, self._on_station_rclick)
         self.stationsCtrl.InsertColumn(0, 'Estação', wx.LIST_FORMAT_CENTRE)
         self.stationsCtrl.InsertColumn(1, 'Concatenado', wx.LIST_FORMAT_CENTRE)
-        self.stationsCtrl.InsertColumn(2, 'Atualizado', wx.LIST_FORMAT_CENTRE)
-        self.stationsCtrl.InsertColumn(3, 'Limpo', wx.LIST_FORMAT_CENTRE)
+        self.stationsCtrl.InsertColumn(2, 'Limpo', wx.LIST_FORMAT_CENTRE)
 
         self.stationsCtrl.SetColumnWidth(0, 100)
         self.stationsCtrl.SetColumnWidth(1, 100)
         self.stationsCtrl.SetColumnWidth(2, 100)
-        self.stationsCtrl.SetColumnWidth(3, 100)
 
         # Criando o sizer de seleção / pesquisa.
         comboSizer = wx.StaticBoxSizer(wx.VERTICAL, panel, 'Adicionar estações')
@@ -206,12 +203,10 @@ class Main(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_quit, exit)
 
         concat = edit.Append(-1, 'Concatenar estações', 'Concatena todas as estações cadastradas.')
-        update = edit.Append(-1, 'Atualizar estações', 'Atualiza todas as estações cadastradas.')
         clean = edit.Append(-1, 'Limpar estações', 'Limpa todas as estações cadastradas.')
         edit.AppendSeparator()
         delete = edit.Append(-1, 'Remover estações', 'Remove todos os dados das estações selecionadas.')
         self.Bind(wx.EVT_MENU, self._concat_stations, concat)
-        self.Bind(wx.EVT_MENU, self._update_stations, update)
         self.Bind(wx.EVT_MENU, self._clean_stations, clean)
         self.Bind(wx.EVT_MENU, self._delete_stations, delete)
         
@@ -234,7 +229,7 @@ class Main(wx.Frame):
         """ Carrega o arquivo de configuração para `self.app_data`. Se ele não existir,
         será criado com as configurações padrão. """
 
-        path = os.path.join(self.userdata_folder, '.4waTT.json')
+        path = os.path.join(self.userdata_folder, '.inmet.json')
         file_exists = os.path.isfile(path)
 
         if file_exists:
@@ -244,7 +239,7 @@ class Main(wx.Frame):
         else:
             self.app_data.clear()
             self.app_data['keep_scrolling'] = True
-            self.app_data['last_zip_date'] = '' # Data dos últimos dados no último zip.
+            self.app_data['last_date'] = '' # Data do último dia dos arquivos baixados.
             self.app_data['saved'] = {}
             self.app_data['stations'] = {}
             
@@ -253,7 +248,7 @@ class Main(wx.Frame):
     def save_file(self):
         """ Salva `self.app_data` no arquivo de configuração. """
 
-        path = os.path.join(self.userdata_folder, '.4waTT.json')
+        path = os.path.join(self.userdata_folder, '.inmet.json')
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(self.app_data, f, indent=4)
 
@@ -282,31 +277,10 @@ class Main(wx.Frame):
 
         if self.app_data['saved']:
             for station, dic in self.app_data['saved'].items():
-                concat = 'Sim' if dic['is_concat'] else 'Não'
-                
-                # Analisando se este .csv está desatualizado.
-                if dic['last_updated']:
-                    update = ''
-                    file_date = dic['last_updated']
-                    ld = file_date.split('-')
-                    last = date(int(ld[0]), int(ld[1]), int(ld[2]))     # dd-mm-yyyy
-                    last += timedelta(days=1)
-
-                    yesterday = date.today() - timedelta(days=1)
-                    yesterday_str = f"{yesterday.year}-{yesterday.month}-{yesterday.day}"
-
-                    # Se o intervalo entre a último data e o dia anterior for menor que um dia,
-                    # não precisamos atualizar este .csv.
-                    if not yesterday - last >= timedelta(days=2):
-                        update = 'Sim'
-                    else:
-                        update = 'Não'
-                        dic['last_updated'] = yesterday_str
-                else:
-                    update = 'Não'
+                concat = 'Sim' if dic['is_concat'] else 'Não'          
 
                 clean = 'Sim' if dic['is_clean'] else 'Não'
-                self.stationsCtrl.Append([station, concat, update, clean])
+                self.stationsCtrl.Append([station, concat, clean])
 
     def _on_city_selected(self, key: str):
         """ Atualiza o valor das informações da estação usando a `key`. """
@@ -467,8 +441,8 @@ class Main(wx.Frame):
                 found = True
 
         if not found:
-            self.stationsCtrl.Append([station, 'Não', 'Não', 'Não'])
-            self.app_data['saved'][station] = {'is_concat': False, 'is_updated': False, 'is_clean': False, 'last_updated': ''}
+            self.stationsCtrl.Append([station, 'Não', 'Não'])
+            self.app_data['saved'][station] = {'is_concat': False, 'is_clean': False, 'last_updated': ''}
 
             # Criando um arquivo vazio no disco. Será sobescrito quando concatenado.
             path = os.path.join(self.app_folder, f'{station}.csv')
@@ -519,14 +493,12 @@ class Main(wx.Frame):
 
         menu = wx.Menu()
         concat = menu.Append(ID.POPUP_CONCAT, 'Concatenar estações selecionadas', 'Concatena todas as estações que estão selecionadas.')
-        update = menu.Append(ID.POPUP_UPDATE, 'Atualizar estações selecionadas', 'Atualiza todas as estações que estão selecionadas.')
         clean = menu.Append(ID.POPUP_CLEAN, 'Limpar estações selecionadas', 'Limpa todas as estações que estão selecionadas.')
         remove = menu.Append(ID.POPUP_DELETE, 'Remover estações selecionadas', 'Remove todas as estações que estão selecionadas.')
         menu.AppendSeparator()
         save = menu.Append(ID.POPUP_SAVE, 'Salvar estações selecionadas', 'Salva todas as estações que estão selecionadas para um lugar de sua escolha.')
 
         self.Bind(wx.EVT_MENU, self._concat_stations, concat)
-        self.Bind(wx.EVT_MENU, self._update_stations, update)
         self.Bind(wx.EVT_MENU, self._clean_stations, clean)
         self.Bind(wx.EVT_MENU, self._delete_stations, remove)
         self.Bind(wx.EVT_MENU, self._save_stations, save)
@@ -556,22 +528,6 @@ class Main(wx.Frame):
             concat = self.stationsCtrl.GetItemText(i, 1)
 
             if concat != 'Sim':
-                out.append(station)
-
-        return out
-
-    def get_update_ready_stations(self):
-        """ Retorna uma lista de tuplas das estações inseridas em `self.stationsCtrl` elegíveis para atualização. """
-
-        count = self.stationsCtrl.GetItemCount()
-        out = []
-
-        for i in range(0, count):
-            station = self.stationsCtrl.GetItemText(i)
-            concat = self.stationsCtrl.GetItemText(i, 1)
-            updated = self.stationsCtrl.GetItemText(i, 2)
-
-            if concat == 'Sim' and updated != 'Sim':
                 out.append(station)
 
         return out
@@ -631,39 +587,6 @@ class Main(wx.Frame):
 
         for station in stations:
             self.app_data['saved'][station]['is_concat'] = True
-
-        self.update_station_ctrl()
-        self.is_processing_being_done = False
-        wx.CallAfter(self.on_clear_progress)
-        self.save_file()
-
-    def _update_stations(self, event):
-        """ Atualiza todas as estações. """
-
-        if self.is_processing_being_done:
-            wx.MessageBox('Por favor, espere todas as outras tarefas terminarem antes de iniciar essa.')
-            return
-
-        update_ready = self.get_update_ready_stations()
-
-        # IDs dos menus de Popup são maiores que 2000.
-        if event.GetId() > 2000:
-            selected = self._get_selected_stations()
-            stations = [x for x in selected if x in update_ready]   # Interseção
-        else:
-            stations = update_ready
-
-        if not stations:
-            wx.MessageBox('Nenhuma estação elegível para ser atualizada.\nLembre-se: que a estação precisa'
-            ' estar concatenada primeiro.')
-            return
-
-        self.is_processing_being_done = True
-        web_scraper.Scraper(self, self.app_data, None).update_estacao(stations)
-
-        for station in stations:
-            self.app_data['saved'][station]['is_updated'] = True
-            self.app_data['saved'][station]['is_clean'] = False     # Será adicionado mais dados no final do arquivo direto do site do inmet.
 
         self.update_station_ctrl()
         self.is_processing_being_done = False
@@ -776,11 +699,9 @@ class Main(wx.Frame):
         # Estamos assumindo que os items estejam na mesma posição em stationsCtrl e no arquivo.
         for dic in self.app_data['saved'].values():
             concat = 'Sim' if dic['is_concat'] else 'Não'
-            update = 'Sim' if dic['is_updated'] else 'Não'
             clean = 'Sim' if dic['is_clean'] else 'Não'
             self.stationsCtrl.SetItem(i, 1, concat)
-            self.stationsCtrl.SetItem(i, 2, update)
-            self.stationsCtrl.SetItem(i, 3, clean)
+            self.stationsCtrl.SetItem(i, 2, clean)
 
             i += 1
 

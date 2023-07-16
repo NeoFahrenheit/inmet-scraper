@@ -1,5 +1,4 @@
 import os
-from wx import CallAfter
 from threading import Thread
 import requests
 from pubsub import pub

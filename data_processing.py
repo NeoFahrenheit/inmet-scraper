@@ -14,9 +14,8 @@ class DataProcessing:
         self.app_data = app_data
         
         self.home = Path.home()
-        self.app_folder = os.path.join(Path.home(), '4waTT')
+        self.app_folder = os.path.join(Path.home(), 'inmet')
         self.historical_folder = os.path.join(self.app_folder, 'dados_historicos')
-        self.temp_folder = os.path.join(self.app_folder, 'temp')
 
         self.stations = {}
 
@@ -26,7 +25,7 @@ class DataProcessing:
         if isinstance(number, str):
             new_number = number.replace(',', '.')
             return new_number
-
+        
         return number
 
     def convert_to_hour(self, n: str) -> str:
@@ -355,17 +354,3 @@ class DataProcessing:
             CallAfter(pub.sendMessage, topicName='update-current-gauge', value=clean_count)
 
             df.to_csv(os.path.join(self.app_folder, f"{csv}.csv"), index=False)
-
-    def process_inmet_file(self) -> pd.DataFrame:
-        ''' Processa um arquivo csv baixando do site INMET para atualização de uma determinada estação.
-        Espera-se que o arquivo se encontre na pasta temp, dentro de 4waTT na pasta de usuário.
-        Após o uso, o arquivo será deletado. Retorna True em caso de sucesso. '''
-
-        file = os.path.join(self.temp_folder, 'generatedBy_react-csv.csv')
-        if os.path.isfile(file):
-            df = pd.read_csv(file, delimiter=';')
-            os.remove(file)
-            return df
-        
-        else:
-            return None

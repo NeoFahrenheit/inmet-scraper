@@ -1,6 +1,6 @@
-# 4waTT
+# INMET SCRAPER
 
-Este é um software feito em parceira com os alunos do grupo DS05-20 do curso Data Expert em parceira com a empresa de energia renovável 4waTT.
+Este é um software feito com o objetivo de coletar, analisar e processar dados meteorológicos do Brasil, com foco na variável de radiação solar.
 
 ## Features
 - Interfáce gráfica intuitiva
