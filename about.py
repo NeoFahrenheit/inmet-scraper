@@ -21,8 +21,7 @@ class About(wx.Dialog):
 
         master = wx.BoxSizer(wx.VERTICAL)
 
-        logo = wx.StaticBitmap(self, -1, wx.Bitmap('media/logo.png'))
-        name = wx.StaticText(self, -1, 'DNC 4waTT\n')
+        name = wx.StaticText(self, -1, 'INMET Scraper\n')
         ver = wx.StaticText(self, -1, f'Version: {self.parent.version}')
         pyVer = wx.StaticText(self, -1, f'Python: {platform.python_version()}')
         wxVer = wx.StaticText(self, -1, f'wxPython: {wx.__version__}')
@@ -30,21 +29,10 @@ class About(wx.Dialog):
         self.rt.GetCaret().Hide()
         self.rt.Bind(wx.EVT_TEXT_URL, self.OnURL)
 
-        self.rt.WriteText("Este software foi criado em uma parceira com a escola DNC e a empresa 4waTT, para o projeto final de curso. ")
         self.rt.WriteText("Este software foi programado por ")
         self.writeInURL('https://www.linkedin.com/in/leandro-monteiro-037bbb75/', 'Leandro Monteiro', False)
-        self.rt.WriteText(" em conjunto com todos os membros da equipe:")
+        self.rt.WriteText(".")
         self.rt.Newline()
-        self.rt.Newline()
-
-        self.writeInBold('Equipe:')
-        self.rt.Newline()
-        self.writeInURL('https://www.linkedin.com/in/ismaelpauchner/', 'ISMAEL PAULO REFOSCO PAUCHNER')
-        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'FERNANDO COSTA MALHEIROS')
-        self.writeInURL('https://www.linkedin.com/in/n%C3%ADcolas-gradela-soares-5b4318182', 'NICOLAS GRADELA SOARES')
-        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'RAFAEL DE BRITTO CARNEIRO JUNHO')
-        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'SACHA AZEVEDO MORAES')
-        self.writeInURL('https://www.linkedin.com/company/4-watt/', 'SANDRO AUGUSTO MARTINS MATTOSO')
         self.rt.Newline()
 
         self.writeInBold('Dependências:')
@@ -57,10 +45,8 @@ class About(wx.Dialog):
 
         self.writeInBold('Contato:')
         self.rt.Newline()
-        self.writeInURL('https://4watt.tech/', '4waTT')
-        self.writeBlueUnderlined('contato@4watt.tech')
+        self.writeBlueUnderlined('leandro.monteiro@inf.ufrgs.br')
 
-        master.Add(logo, flag=wx.ALL | wx.ALIGN_CENTER, border=10)
         master.Add(name, flag=wx.LEFT | wx.RIGHT | wx.TOP | wx.ALIGN_CENTER, border=10)
         master.Add(ver, flag=wx.ALIGN_CENTER)
         master.Add(pyVer, flag=wx.ALIGN_CENTER)
