@@ -11,9 +11,18 @@ d_dic = {
     "Umidade": ['UMIDADE RELATIVA DO AR, HORARIA (%)', 'UMD_INS']
 }
 
+d_dic_2019 = {
+    "Data": ['Data', 'DT_MEDICAO'],
+    "Hora": ['Hora UTC', 'HR_MEDICAO'],
+    "Pressao": ['PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)', 'PRE_INS'],
+    "Radiacao": ['RADIACAO GLOBAL (KJ/m²)', 'RAD_GLO'],
+    "Temperatura": ['TEMPERATURA DO AR - BULBO SECO, HORARIA (°C)', 'TEM_INS'],
+    "Umidade": ['UMIDADE RELATIVA DO AR, HORARIA (%)', 'UMD_INS']
+}
+
 # Alguém de lá teve a brilhante ideia de modificar o nome das colunas e a formatação dos
 # dados a partir de 2019.
-d_dic_2019 = {
+d_dic_2020_greater = {
     "Data": ['Data', 'DT_MEDICAO'],
     "Hora": ['Hora UTC', 'HR_MEDICAO'],
     "Pressao": ['PRESSAO ATMOSFERICA AO NIVEL DA ESTACAO, HORARIA (mB)', 'PRE_INS'],

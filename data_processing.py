@@ -7,7 +7,7 @@ import numpy as np
 from pubsub import pub
 from datetime import datetime
 
-from id import d_dic, d_dic_2019
+from id import d_dic, d_dic_2019, d_dic_2020_greater
 
 class DataProcessing:
     def __init__(self, app_data):
@@ -43,7 +43,7 @@ class DataProcessing:
         else:
             return n[:2] + ':00'
 
-    def convert_to_hour_2019(self, n: str) -> str:
+    def convert_to_hour_2020(self, n: str) -> str:
         ''' Recebe uma str da hora no formato '0000 UTC', '0100 UTC', '0200 UTC', ..., '2200 UTC', '2300 UTC' 
         e retorna no formato HH:MM. '''
 
@@ -116,6 +116,7 @@ class DataProcessing:
         ''' Concatena os dados históricos das estações em `stations` para que todas elas estejam em 
         um arquivo só. '''
 
+        isIt2020orGreater = False
         isIt2019 = False
 
         files = os.listdir(self.historical_folder)
@@ -143,10 +144,15 @@ class DataProcessing:
 
                 return stations.clear()
 
-            # Verificamos se o ano é 2019 ou posterior. A formatação dos .csv é diferente.
+            # Verificamos se o ano é 2020 ou posterior. A formatação dos .csv é diferente.
             ano = int(zip.filename.split('\\')[-1].split('.')[0])
-            if ano >= 2019:
+            if ano >= 2020:
+                isIt2020orGreater = True
+
+            if ano == 2019:
                 isIt2019 = True
+            else:
+                isIt2019 = False
             
             pub.sendMessage('update-overall-text', text=f"Concatenando arquivos históricos do ano {ano}...")
             
@@ -162,6 +168,8 @@ class DataProcessing:
                 pub.sendMessage('update-file-text', text=f"Processando estação {estacao}...")
                 if isIt2019:
                     dic = d_dic_2019
+                elif isIt2020orGreater:
+                    dic = d_dic_2020_greater
                 else:
                     dic = d_dic
 
@@ -180,11 +188,11 @@ class DataProcessing:
 
                 df['Umidade'] = df['Umidade'].astype(str)
 
-                if isIt2019:
+                if isIt2019 or isIt2020orGreater:
                     input_date = '%Y/%M/%d'
                     output_date = '%Y-%M-%d'
                     df['Data'] = pd.to_datetime(df['Data'], format=input_date).dt.strftime(output_date)
-                    df['Hora'] = df['Hora'].apply(lambda x: self.convert_to_hour_2019(x))
+                    df['Hora'] = df['Hora'].apply(lambda x: self.convert_to_hour_2020(x))
 
                 # Se um .csv já está na pasta de downloads, vamos concatená-lo.
                 file = os.path.join(self.app_folder, f"{estacao}.csv")
