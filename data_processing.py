@@ -237,8 +237,9 @@ class DataProcessing:
             df['Pressao'].fillna(-9999, inplace=True)
             df['Radiacao'].fillna(-9999, inplace=True)
             df['Temperatura'].fillna(-9999, inplace=True)
-            df['Umidade'].fillna(-9999, inplace=True)
+            df['Umidade'].fillna(-9999, inplace=True) 
 
+            df['Pressao'].ffill()
 
             # Substituindo as vírgulas por ponto para facilitar a conversão para número.
             only_in = ['Pressao', 'Radiacao', 'Temperatura', 'Umidade']
@@ -271,7 +272,7 @@ class DataProcessing:
             # precisamos transformar os números negativos em NaN primeiro.
             for column in only_in:
                 self.replace_negative_nan(df, column)
-            df.fillna(method='ffill', inplace=True)
+            df.ffill(inplace=True)
 
             # Testando os valores mínimos.
             testing = []
@@ -289,7 +290,7 @@ class DataProcessing:
 
             df.to_csv(os.path.join(self.app_folder, f"{csv}.csv"), index=False)
 
-
+    # Não é usado, por enquanto.
     def do_data_cleaning_2(self, stations: list):
         """ Faz a limpeza dos dados das estações presentes em `stations`. Se houver algum erro, a estação 
         é removida de `stations`. """
@@ -345,7 +346,7 @@ class DataProcessing:
             # precisamos transformar os números negativos em NaN primeiro.
             for column in only_in:
                 self.replace_negative_nan(df, column)
-            df.fillna(method='ffill', inplace=True)
+            df.ffill(inplace=True)
 
             # Testando os valores mínimos.
             testing = []
